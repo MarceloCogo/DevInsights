@@ -82,7 +82,7 @@ function AppLoginPage() {
   );
 }
 
-type AuthMeResponse = {
+type AppBootstrapResponse = {
   user: {
     id: number;
     github_id: number;
@@ -94,6 +94,31 @@ type AuthMeResponse = {
     id: number;
     name: string;
   } | null;
+  integration: {
+    connected: boolean;
+    selectedRepositories: number;
+  };
+  sync: {
+    id: number;
+    status: "pending" | "running" | "completed" | "failed";
+    processed_repositories: number;
+    total_prs: number;
+    error_message: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+  } | null;
+  repositoryInsights: {
+    repositories: number;
+    open_prs: number;
+    merged_prs: number;
+  };
+};
+
+type Repository = {
+  id: number;
+  full_name: string;
+  private: boolean;
+  selected: boolean;
 };
 
 function AppDashboardPage() {
@@ -102,23 +127,50 @@ function AppDashboardPage() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [data, setData] = React.useState<AuthMeResponse | null>(null);
+  const [data, setData] = React.useState<AppBootstrapResponse | null>(null);
+  const [repositories, setRepositories] = React.useState<Repository[]>([]);
+  const [savingRepos, setSavingRepos] = React.useState(false);
+
+  const loadBootstrap = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/app/bootstrap`, { credentials: "include" });
+    if (response.status === 401) {
+      window.location.assign("/app/login");
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error("Failed to load app bootstrap");
+    }
+
+    return (await response.json()) as AppBootstrapResponse;
+  }, [apiBaseUrl]);
+
+  const loadRepositories = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/integrations/github/repositories`, {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      throw new Error("Failed to load repositories");
+    }
+
+    const payload = (await response.json()) as { connected: boolean; repositories: Repository[] };
+    return payload.repositories;
+  }, [apiBaseUrl]);
 
   React.useEffect(() => {
     const load = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/auth/me`, { credentials: "include" });
-        if (response.status === 401) {
-          window.location.assign("/app/login");
+        const bootstrap = await loadBootstrap();
+        if (!bootstrap) {
           return;
         }
 
-        if (!response.ok) {
-          throw new Error("Failed to load session");
-        }
+        setData(bootstrap);
 
-        const payload = (await response.json()) as AuthMeResponse;
-        setData(payload);
+        if (bootstrap.integration.connected) {
+          const repos = await loadRepositories();
+          setRepositories(repos);
+        }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unknown error");
       } finally {
@@ -127,7 +179,27 @@ function AppDashboardPage() {
     };
 
     void load();
-  }, [apiBaseUrl]);
+  }, [loadBootstrap, loadRepositories]);
+
+  React.useEffect(() => {
+    if (!data?.sync || (data.sync.status !== "pending" && data.sync.status !== "running")) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const bootstrap = await loadBootstrap();
+        if (!bootstrap) {
+          return;
+        }
+        setData(bootstrap);
+      } catch {
+        // ignore polling errors
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [data?.sync, loadBootstrap]);
 
   const logout = async () => {
     await fetch(`${apiBaseUrl}/auth/logout`, {
@@ -136,6 +208,83 @@ function AppDashboardPage() {
     });
     window.location.assign("/");
   };
+
+  const connectGitHubApp = async () => {
+    const response = await fetch(`${apiBaseUrl}/integrations/github/install-url`, {
+      credentials: "include"
+    });
+
+    if (!response.ok) {
+      setError(isPt ? "Não foi possível gerar URL de instalação." : "Could not generate install URL.");
+      return;
+    }
+
+    const payload = (await response.json()) as { installUrl: string };
+    window.location.assign(payload.installUrl);
+  };
+
+  const toggleRepository = (id: number) => {
+    setRepositories((previous) =>
+      previous.map((repository) =>
+        repository.id === id ? { ...repository, selected: !repository.selected } : repository
+      )
+    );
+  };
+
+  const saveRepositoriesAndSync = async () => {
+    setSavingRepos(true);
+    setError(null);
+    try {
+      const selectedIds = repositories.filter((repository) => repository.selected).map((repository) => repository.id);
+      const response = await fetch(`${apiBaseUrl}/integrations/github/repositories/select`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repositoryIds: selectedIds })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save repositories");
+      }
+
+      const bootstrap = await loadBootstrap();
+      if (bootstrap) {
+        setData(bootstrap);
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unknown error");
+    } finally {
+      setSavingRepos(false);
+    }
+  };
+
+  const syncNow = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/integrations/github/sync-now`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error("Failed to start sync");
+      }
+      const bootstrap = await loadBootstrap();
+      if (bootstrap) {
+        setData(bootstrap);
+      }
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Unknown error");
+    }
+  };
+
+  const onboardingStep = !data
+    ? 0
+    : !data.integration.connected
+      ? 1
+      : data.integration.selectedRepositories === 0
+        ? 2
+        : !data.sync || data.sync.status === "pending" || data.sync.status === "running"
+          ? 3
+          : 4;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-ink px-5 py-10 text-text">
@@ -162,7 +311,7 @@ function AppDashboardPage() {
           </div>
         </header>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
+        <section className="mt-6 grid gap-4 md:grid-cols-4">
           <article className="rounded-2xl border border-line bg-panel p-5">
             <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Status" : "Status"}</p>
             <p className="mt-2 text-lg font-semibold text-text">
@@ -181,27 +330,115 @@ function AppDashboardPage() {
             </p>
             <p className="mt-2 text-lg font-semibold text-text">{data?.organization?.name ?? "-"}</p>
           </article>
+          <article className="rounded-2xl border border-line bg-panel p-5">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Onboarding" : "Onboarding"}</p>
+            <p className="mt-2 text-lg font-semibold text-text">
+              {isPt ? `Etapa ${onboardingStep}/4` : `Step ${onboardingStep}/4`}
+            </p>
+          </article>
         </section>
 
         <section className="mt-6 rounded-2xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6">
-          <h2 className="text-xl font-bold">{isPt ? "Próximos passos" : "Next steps"}</h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted">
-            <li>
-              {isPt
-                ? "Conectar GitHub App para importar repositórios e iniciar sync inicial."
-                : "Connect GitHub App to import repositories and start initial sync."}
-            </li>
-            <li>
-              {isPt
-                ? "Selecionar repositórios monitorados por squad."
-                : "Select monitored repositories by squad."}
-            </li>
-            <li>
-              {isPt
-                ? "Liberar dashboards de PR Intelligence e DORA conforme dados sincronizados."
-                : "Enable PR Intelligence and DORA dashboards as data is synchronized."}
-            </li>
-          </ul>
+          <h2 className="text-xl font-bold">{isPt ? "Onboarding self-service" : "Self-service onboarding"}</h2>
+          {!data?.integration.connected ? (
+            <div className="mt-4">
+              <p className="text-sm text-muted">
+                {isPt
+                  ? "Passo 1: conecte o GitHub App para começar a coletar dados dos repositórios."
+                  : "Step 1: connect GitHub App to start collecting repository data."}
+              </p>
+              <button
+                type="button"
+                onClick={connectGitHubApp}
+                className="mt-4 rounded-full bg-accent px-5 py-2 text-sm font-bold text-ink hover:brightness-110"
+              >
+                {isPt ? "Conectar GitHub App" : "Connect GitHub App"}
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <p className="text-sm text-muted">
+                {isPt
+                  ? "Passo 2: selecione os repositórios monitorados e inicie a sincronização inicial."
+                  : "Step 2: select monitored repositories and start initial sync."}
+              </p>
+
+              {repositories.length > 0 ? (
+                <div className="grid max-h-64 gap-2 overflow-auto rounded-xl border border-line bg-ink/20 p-3 md:grid-cols-2">
+                  {repositories.map((repo) => (
+                    <label key={repo.id} className="flex items-center gap-2 rounded-lg border border-line/60 bg-panel/70 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={repo.selected}
+                        onChange={() => toggleRepository(repo.id)}
+                        className="h-4 w-4"
+                      />
+                      <span className="truncate">{repo.full_name}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">{isPt ? "Carregando repositórios autorizados..." : "Loading authorized repositories..."}</p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={saveRepositoriesAndSync}
+                  disabled={savingRepos || repositories.length === 0}
+                  className="rounded-full bg-accent px-5 py-2 text-sm font-bold text-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {savingRepos
+                    ? isPt
+                      ? "Salvando..."
+                      : "Saving..."
+                    : isPt
+                      ? "Salvar e iniciar coleta"
+                      : "Save and start collection"}
+                </button>
+                <button
+                  type="button"
+                  onClick={syncNow}
+                  className="rounded-full border border-line px-5 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
+                >
+                  {isPt ? "Sincronizar agora" : "Sync now"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {data?.sync ? (
+            <div className="mt-6 rounded-xl border border-line/70 bg-ink/20 p-4 text-sm text-muted">
+              <p>
+                {isPt ? "Status do sync:" : "Sync status:"} <strong className="text-text">{data.sync.status}</strong>
+              </p>
+              <p>
+                {isPt ? "Repositórios processados:" : "Processed repositories:"} {data.sync.processed_repositories}
+              </p>
+              <p>
+                {isPt ? "PRs coletados:" : "Collected PRs:"} {data.sync.total_prs}
+              </p>
+              {data.sync.error_message ? <p className="text-red-300">{data.sync.error_message}</p> : null}
+            </div>
+          ) : null}
+
+          {data?.repositoryInsights ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
+                <p className="text-xs text-muted">{isPt ? "Repos monitorados" : "Monitored repos"}</p>
+                <p className="mt-1 font-semibold text-text">{data.repositoryInsights.repositories}</p>
+              </article>
+              <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
+                <p className="text-xs text-muted">{isPt ? "PRs abertos" : "Open PRs"}</p>
+                <p className="mt-1 font-semibold text-text">{data.repositoryInsights.open_prs}</p>
+              </article>
+              <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
+                <p className="text-xs text-muted">{isPt ? "PRs merged" : "Merged PRs"}</p>
+                <p className="mt-1 font-semibold text-text">{data.repositoryInsights.merged_prs}</p>
+              </article>
+            </div>
+          ) : null}
+
           {error ? <p className="mt-4 text-sm text-red-300">{error}</p> : null}
         </section>
       </div>

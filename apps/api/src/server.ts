@@ -172,6 +172,29 @@ const ensureSchema = async () => {
       updated_at timestamptz not null default now(),
       primary key (organization_id, repository_id)
     );
+
+    create table if not exists integration_sync_jobs (
+      id bigserial primary key,
+      organization_id bigint not null references organizations(id),
+      status text not null,
+      processed_repositories integer not null default 0,
+      total_prs integer not null default 0,
+      error_message text,
+      started_at timestamptz,
+      finished_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    create table if not exists repository_sync_stats (
+      organization_id bigint not null references organizations(id),
+      repository_id bigint not null,
+      full_name text not null,
+      open_prs integer not null default 0,
+      merged_prs integer not null default 0,
+      updated_at timestamptz not null default now(),
+      primary key (organization_id, repository_id)
+    );
   `);
 };
 
@@ -297,6 +320,141 @@ const getSessionUser = async (cookieHeader: string | undefined) => {
   return { sessionId, user: result.rows[0] };
 };
 
+const getOrganizationIdForUser = async (userId: number) => {
+  const db = getPool();
+  const orgResult = await db.query(
+    `
+      select organization_id
+      from organization_members
+      where user_id = $1
+      order by created_at asc
+      limit 1
+    `,
+    [userId]
+  );
+
+  if (orgResult.rowCount === 0) {
+    return null;
+  }
+
+  return Number(orgResult.rows[0].organization_id);
+};
+
+const runInitialSync = async (organizationId: number) => {
+  const db = getPool();
+
+  const installationResult = await db.query(
+    `select installation_id from github_installations where organization_id = $1 limit 1`,
+    [organizationId]
+  );
+
+  if (installationResult.rowCount === 0) {
+    throw new Error("missing_installation");
+  }
+
+  const selectedRepositoriesResult = await db.query(
+    `
+      select repository_id, full_name
+      from tracked_repositories
+      where organization_id = $1 and selected = true
+      order by full_name asc
+    `,
+    [organizationId]
+  );
+
+  const repositories = selectedRepositoriesResult.rows as Array<{ repository_id: number; full_name: string }>;
+  const installationToken = await createInstallationToken(Number(installationResult.rows[0].installation_id));
+
+  let totalPrs = 0;
+  let processed = 0;
+
+  for (const repository of repositories) {
+    const pullsResponse = await fetch(
+      `https://api.github.com/repos/${repository.full_name}/pulls?state=all&per_page=100`,
+      {
+        headers: {
+          Authorization: `Bearer ${installationToken}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "DevInsights"
+        }
+      }
+    );
+
+    if (!pullsResponse.ok) {
+      throw new Error(`failed_repo_sync_${repository.full_name}_${pullsResponse.status}`);
+    }
+
+    const pulls = (await pullsResponse.json()) as Array<{ state: string; merged_at: string | null }>;
+    const openPrs = pulls.filter((item) => item.state === "open").length;
+    const mergedPrs = pulls.filter((item) => item.merged_at !== null).length;
+
+    totalPrs += pulls.length;
+    processed += 1;
+
+    await db.query(
+      `
+        insert into repository_sync_stats (organization_id, repository_id, full_name, open_prs, merged_prs)
+        values ($1, $2, $3, $4, $5)
+        on conflict (organization_id, repository_id)
+        do update set full_name = excluded.full_name, open_prs = excluded.open_prs, merged_prs = excluded.merged_prs, updated_at = now()
+      `,
+      [organizationId, repository.repository_id, repository.full_name, openPrs, mergedPrs]
+    );
+  }
+
+  return {
+    processedRepositories: processed,
+    totalPrs
+  };
+};
+
+const createAndRunSyncJob = async (organizationId: number) => {
+  const db = getPool();
+  const createdJob = await db.query(
+    `
+      insert into integration_sync_jobs (organization_id, status, started_at)
+      values ($1, 'pending', now())
+      returning id
+    `,
+    [organizationId]
+  );
+
+  const jobId = Number(createdJob.rows[0].id);
+
+  setImmediate(async () => {
+    try {
+      await db.query(
+        `update integration_sync_jobs set status = 'running', updated_at = now() where id = $1`,
+        [jobId]
+      );
+
+      const result = await runInitialSync(organizationId);
+
+      await db.query(
+        `
+          update integration_sync_jobs
+          set status = 'completed', processed_repositories = $1, total_prs = $2, finished_at = now(), updated_at = now()
+          where id = $3
+        `,
+        [result.processedRepositories, result.totalPrs, jobId]
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "sync_failed";
+      await db.query(
+        `
+          update integration_sync_jobs
+          set status = 'failed', error_message = $1, finished_at = now(), updated_at = now()
+          where id = $2
+        `,
+        [message, jobId]
+      );
+      app.log.error(error);
+    }
+  });
+
+  return jobId;
+};
+
 app.addHook("onRequest", async (request, reply) => {
   const origin = request.headers.origin;
   const expectedOrigin = webBaseUrl || getWebBaseUrl(request);
@@ -420,6 +578,67 @@ app.get(`${apiBasePath}/auth/me`, async (request, reply) => {
   return {
     user: session.user,
     organization: orgResult.rows[0] ?? null
+  };
+});
+
+app.get(`${apiBasePath}/app/bootstrap`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizationId = await getOrganizationIdForUser(session.user.id);
+  if (!organizationId) {
+    return {
+      user: session.user,
+      organization: null,
+      integration: { connected: false, selectedRepositories: 0 },
+      sync: null
+    };
+  }
+
+  const orgResult = await db.query(`select id, name from organizations where id = $1`, [organizationId]);
+  const installationResult = await db.query(
+    `select installation_id from github_installations where organization_id = $1 limit 1`,
+    [organizationId]
+  );
+  const selectedRepositoriesResult = await db.query(
+    `select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`,
+    [organizationId]
+  );
+  const lastSyncResult = await db.query(
+    `
+      select id, status, processed_repositories, total_prs, error_message, started_at, finished_at
+      from integration_sync_jobs
+      where organization_id = $1
+      order by created_at desc
+      limit 1
+    `,
+    [organizationId]
+  );
+  const repoStatsResult = await db.query(
+    `
+      select count(*)::int as repositories, coalesce(sum(open_prs), 0)::int as open_prs, coalesce(sum(merged_prs), 0)::int as merged_prs
+      from repository_sync_stats
+      where organization_id = $1
+    `,
+    [organizationId]
+  );
+
+  return {
+    user: session.user,
+    organization: orgResult.rows[0] ?? null,
+    integration: {
+      connected: (installationResult.rowCount ?? 0) > 0,
+      selectedRepositories: selectedRepositoriesResult.rows[0]?.count ?? 0
+    },
+    sync: lastSyncResult.rows[0] ?? null,
+    repositoryInsights: repoStatsResult.rows[0] ?? { repositories: 0, open_prs: 0, merged_prs: 0 }
   };
 });
 
@@ -623,7 +842,27 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
     );
   }
 
-  return { ok: true, selectedCount: repositoryIds.length, syncStatus: "queued" };
+  const jobId = await createAndRunSyncJob(organizationId);
+  return { ok: true, selectedCount: repositoryIds.length, syncStatus: "queued", jobId };
+});
+
+app.post(`${apiBasePath}/integrations/github/sync-now`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizationId = await getOrganizationIdForUser(session.user.id);
+  if (!organizationId) {
+    return reply.code(400).send({ error: "missing_organization" });
+  }
+
+  const jobId = await createAndRunSyncJob(organizationId);
+  return { ok: true, syncStatus: "queued", jobId };
 });
 
 if (existsSync(webDistPath)) {
