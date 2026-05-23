@@ -1,7 +1,11 @@
 import Fastify from "fastify";
+import FastifyStatic from "@fastify/static";
 import { SignJWT, importPKCS8 } from "jose";
 import { Pool } from "pg";
 import { createHmac, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type GitHubUser = {
   id: number;
@@ -15,7 +19,7 @@ const app = Fastify({ logger: true });
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const host = "0.0.0.0";
 const apiBasePath = "/api/v1";
-const webBaseUrl = process.env.WEB_BASE_URL ?? "http://localhost:3000";
+const webBaseUrl = process.env.WEB_BASE_URL ?? "";
 const sessionCookieName = process.env.SESSION_COOKIE_NAME ?? "devinsights.sid";
 const sessionSecret = process.env.SESSION_SECRET ?? "dev-secret";
 const githubClientId = process.env.GITHUB_CLIENT_ID ?? "";
@@ -28,6 +32,22 @@ const databaseUrl = process.env.DATABASE_URL;
 
 const oauthStateStore = new Map<string, number>();
 const pool = new Pool({ connectionString: databaseUrl });
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const webDistPath = join(__dirname, "../../web/dist");
+
+const getWebBaseUrl = (request: { headers: Record<string, string | string[] | undefined> }) => {
+  if (webBaseUrl) {
+    return webBaseUrl;
+  }
+
+  const proto = (request.headers["x-forwarded-proto"] as string | undefined) ?? "http";
+  const hostHeader =
+    (request.headers["x-forwarded-host"] as string | undefined) ??
+    (request.headers.host as string | undefined) ??
+    "localhost:3000";
+
+  return `${proto}://${hostHeader}`;
+};
 
 const signState = (raw: string) => createHmac("sha256", sessionSecret).update(raw).digest("hex");
 
@@ -249,7 +269,8 @@ const getSessionUser = async (cookieHeader: string | undefined) => {
 
 app.addHook("onRequest", async (request, reply) => {
   const origin = request.headers.origin;
-  if (origin && origin.startsWith(webBaseUrl)) {
+  const expectedOrigin = webBaseUrl || getWebBaseUrl(request);
+  if (origin && origin.startsWith(expectedOrigin)) {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
     reply.header("Access-Control-Allow-Headers", "Content-Type");
@@ -331,7 +352,7 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
     ]);
 
     reply.header("Set-Cookie", setSessionCookie(sessionId));
-    return reply.redirect(`${webBaseUrl}/app`);
+    return reply.redirect(`${getWebBaseUrl(request)}/app`);
   } catch (error) {
     app.log.error(error);
     return reply.code(500).send({ error: "oauth_callback_failed" });
@@ -389,7 +410,7 @@ app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply)
 app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) => {
   const session = await getSessionUser(request.headers.cookie);
   if (!session) {
-    return reply.redirect(`${webBaseUrl}/app/login`);
+    return reply.redirect(`${getWebBaseUrl(request)}/app/login`);
   }
 
   const { installation_id: installationId, setup_action: setupAction } = request.query as {
@@ -398,7 +419,7 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
   };
 
   if (!installationId) {
-    return reply.redirect(`${webBaseUrl}/app?error=missing_installation_id`);
+    return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_installation_id`);
   }
 
   const orgResult = await pool.query(
@@ -413,7 +434,7 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
   );
 
   if (orgResult.rowCount === 0) {
-    return reply.redirect(`${webBaseUrl}/app?error=missing_organization`);
+    return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_organization`);
   }
 
   const organizationId = orgResult.rows[0].organization_id;
@@ -427,7 +448,7 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
     [organizationId, Number(installationId), session.user.id]
   );
 
-  return reply.redirect(`${webBaseUrl}/app?integration=${setupAction ?? "installed"}`);
+  return reply.redirect(`${getWebBaseUrl(request)}/app?integration=${setupAction ?? "installed"}`);
 });
 
 app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply) => {
@@ -540,6 +561,24 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
 
   return { ok: true, selectedCount: repositoryIds.length, syncStatus: "queued" };
 });
+
+if (existsSync(webDistPath)) {
+  app.register(FastifyStatic, {
+    root: webDistPath,
+    prefix: "/"
+  });
+
+  app.get("/", async (_, reply) => reply.sendFile("index.html"));
+  app.get("/app", async (_, reply) => reply.sendFile("index.html"));
+  app.get("/app/*", async (_, reply) => reply.sendFile("index.html"));
+  app.get("/*", async (request, reply) => {
+    if (request.url.startsWith(apiBasePath)) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+
+    return reply.sendFile("index.html");
+  });
+}
 
 const start = async () => {
   try {

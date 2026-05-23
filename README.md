@@ -381,3 +381,34 @@ Tenant (customer-level) data stored per organization in database:
 - integration status and sync state
 
 This means setup is done once by the platform team, then each customer connects GitHub in a self-service onboarding flow.
+
+## Railway (Simplest Setup)
+
+To keep deployment as simple as possible, run a single Railway service from the monorepo root:
+
+- Build command: `pnpm build`
+- Start command: `pnpm start`
+
+In this mode:
+
+- API runs from `apps/api`
+- Web is built from `apps/web` and served by the API as static files
+- Landing is available at `/`
+- App login is available at `/app/login`
+
+Required variables in Railway:
+
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `SESSION_COOKIE_NAME`
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `GITHUB_OAUTH_CALLBACK_URL`
+- `GITHUB_APP_ID`
+- `GITHUB_APP_NAME`
+- `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_WEBHOOK_SECRET`
+
+Recommended variable:
+
+- `WEB_BASE_URL` (for explicit redirect URLs)
