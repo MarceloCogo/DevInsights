@@ -339,7 +339,8 @@ pnpm dev
 
 Services and health endpoints:
 
-- Web: `http://localhost:3000`
+- Web Landing: `http://localhost:3000`
+- Web App Login: `http://localhost:3000/app/login`
 - API: `http://localhost:3001/health`
 - API Ready: `http://localhost:3001/ready`
 - Worker: `http://localhost:3002/health`
@@ -361,3 +362,22 @@ Implemented:
 - health/ready endpoints and graceful shutdown
 - Docker Compose with PostgreSQL + app services
 - base TypeScript configuration and environment template
+- route separation: landing in `/` and app in `/app/*`
+- GitHub OAuth login flow with secure session cookie
+- GitHub App self-service integration flow (install URL, callback, repository selection)
+
+## GitHub Self-Service Model
+
+Global (platform-level) secrets in environment variables:
+
+- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
+- `GITHUB_APP_ID`, `GITHUB_APP_NAME`, `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_WEBHOOK_SECRET`
+
+Tenant (customer-level) data stored per organization in database:
+
+- `installation_id` of GitHub App
+- repository selection per organization
+- integration status and sync state
+
+This means setup is done once by the platform team, then each customer connects GitHub in a self-service onboarding flow.
