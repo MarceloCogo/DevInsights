@@ -203,7 +203,13 @@ export function LandingPage() {
     const saved = localStorage.getItem("devinsights.locale") as Locale | null;
     if (saved === "pt-BR" || saved === "en") {
       setLocale(saved);
+      return;
     }
+
+    const browserLocale = navigator.language.toLowerCase();
+    const detected: Locale = browserLocale.startsWith("pt") ? "pt-BR" : "en";
+    setLocale(detected);
+    localStorage.setItem("devinsights.locale", detected);
   }, []);
 
   const t = copy[locale];
