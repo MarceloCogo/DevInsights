@@ -82,9 +82,140 @@ function AppLoginPage() {
   );
 }
 
+type AuthMeResponse = {
+  user: {
+    id: number;
+    github_id: number;
+    github_login: string;
+    name: string | null;
+    avatar_url: string | null;
+  };
+  organization: {
+    id: number;
+    name: string;
+  } | null;
+};
+
+function AppDashboardPage() {
+  const locale = detectLocale();
+  const isPt = locale === "pt-BR";
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [data, setData] = React.useState<AuthMeResponse | null>(null);
+
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/auth/me`, { credentials: "include" });
+        if (response.status === 401) {
+          window.location.assign("/app/login");
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error("Failed to load session");
+        }
+
+        const payload = (await response.json()) as AuthMeResponse;
+        setData(payload);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
+  }, [apiBaseUrl]);
+
+  const logout = async () => {
+    await fetch(`${apiBaseUrl}/auth/logout`, {
+      method: "POST",
+      credentials: "include"
+    });
+    window.location.assign("/");
+  };
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-ink px-5 py-10 text-text">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_15%,rgba(34,184,240,0.14),transparent_32%),radial-gradient(circle_at_90%_0%,rgba(40,215,164,0.12),transparent_40%)]" />
+      <div className="relative mx-auto w-full max-w-6xl">
+        <header className="rounded-2xl border border-line bg-panel/80 p-5 backdrop-blur md:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-accent">DevInsights App</p>
+              <h1 className="mt-2 text-2xl font-bold md:text-3xl">
+                {isPt ? "Dashboard inicial" : "Initial dashboard"}
+              </h1>
+              <p className="mt-1 text-sm text-muted">
+                {isPt ? "Usuário autenticado via GitHub" : "User authenticated with GitHub"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={logout}
+              className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
+            >
+              {isPt ? "Sair" : "Sign out"}
+            </button>
+          </div>
+        </header>
+
+        <section className="mt-6 grid gap-4 md:grid-cols-3">
+          <article className="rounded-2xl border border-line bg-panel p-5">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Status" : "Status"}</p>
+            <p className="mt-2 text-lg font-semibold text-text">
+              {loading ? (isPt ? "Carregando..." : "Loading...") : isPt ? "Autenticado" : "Authenticated"}
+            </p>
+          </article>
+          <article className="rounded-2xl border border-line bg-panel p-5">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">GitHub</p>
+            <p className="mt-2 text-lg font-semibold text-text">
+              {data?.user.github_login ? `@${data.user.github_login}` : "-"}
+            </p>
+          </article>
+          <article className="rounded-2xl border border-line bg-panel p-5">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">
+              {isPt ? "Organização" : "Organization"}
+            </p>
+            <p className="mt-2 text-lg font-semibold text-text">{data?.organization?.name ?? "-"}</p>
+          </article>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6">
+          <h2 className="text-xl font-bold">{isPt ? "Próximos passos" : "Next steps"}</h2>
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted">
+            <li>
+              {isPt
+                ? "Conectar GitHub App para importar repositórios e iniciar sync inicial."
+                : "Connect GitHub App to import repositories and start initial sync."}
+            </li>
+            <li>
+              {isPt
+                ? "Selecionar repositórios monitorados por squad."
+                : "Select monitored repositories by squad."}
+            </li>
+            <li>
+              {isPt
+                ? "Liberar dashboards de PR Intelligence e DORA conforme dados sincronizados."
+                : "Enable PR Intelligence and DORA dashboards as data is synchronized."}
+            </li>
+          </ul>
+          {error ? <p className="mt-4 text-sm text-red-300">{error}</p> : null}
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function AppRouter() {
   if (window.location.pathname === "/app/login") {
     return <AppLoginPage />;
+  }
+
+  if (window.location.pathname === "/app" || window.location.pathname.startsWith("/app/")) {
+    return <AppDashboardPage />;
   }
 
   return <LandingPage />;

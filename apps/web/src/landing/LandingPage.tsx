@@ -246,7 +246,7 @@ export function LandingPage() {
           </div>
         </nav>
 
-        <section id="produto" className="pt-14 md:pt-20">
+        <section id="produto" className="pt-12 md:pt-16">
           <p className="text-xs uppercase tracking-[0.18em] text-accent">{t.eyebrow}</p>
           <h1 className="mt-4 max-w-4xl text-3xl font-extrabold leading-tight md:text-6xl">{t.title}</h1>
           <p className="mt-5 max-w-3xl text-sm leading-7 text-muted md:text-lg">{t.subtitle}</p>
@@ -260,58 +260,31 @@ export function LandingPage() {
             <a href="#dashboard" className="rounded-full border border-line px-6 py-3 text-sm font-bold text-text hover:bg-panelSoft focus:outline-none focus:ring-2 focus:ring-cyan">{t.ctaSecondary}</a>
             <a href="https://github.com" target="_blank" rel="noreferrer" className="self-center text-sm text-muted underline decoration-line underline-offset-4 hover:text-text">{t.ctaTertiary}</a>
           </div>
-          <div className="mt-10 rounded-3xl border border-line/80 bg-gradient-to-br from-panel to-panelSoft p-6 shadow-glow md:p-8">
-            <div className="grid gap-4 md:grid-cols-3">
-              <article className="rounded-2xl border border-line/70 bg-ink/35 p-4 md:col-span-2">
-                <p className="text-xs uppercase tracking-[0.14em] text-accent">North star</p>
-                <p className="mt-2 text-lg font-semibold leading-7 text-text md:text-xl">
-                  Engineering Intelligence para decisões de produto, plataforma e execução, sem transformar dados
-                  em vigilância.
-                </p>
-              </article>
-              <article className="rounded-2xl border border-line/70 bg-ink/35 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-muted">Focus now</p>
-                <p className="mt-2 text-sm leading-6 text-muted">PR flow, DORA, AI Impact e Azure DevOps Flow em um único contexto.</p>
-              </article>
-            </div>
-          </div>
         </section>
 
-        <section className="mt-24">
+        <section className="mt-20">
           <SectionTitle id="problema" title={t.problemTitle} subtitle={t.problemSubtitle} />
-          <div className="grid gap-3 md:grid-cols-6">
-            {t.painPoints.map((item, idx) => (
-              <article
-                key={item}
-                className={`rounded-2xl border border-line bg-panel p-5 text-sm leading-6 text-muted ${idx % 3 === 0 ? "md:col-span-3" : "md:col-span-3 lg:col-span-2"}`}
-              >
-                <p className="mb-2 text-xs uppercase tracking-[0.13em] text-accent">Pain signal</p>
-                {item}
-              </article>
+          <div className="grid gap-3 md:grid-cols-5">
+            {t.painPoints.map((item) => (
+              <article key={item} className="rounded-xl border border-line bg-panel p-4 text-sm leading-6 text-muted">{item}</article>
             ))}
           </div>
         </section>
 
-        <section className="mt-24" id="metricas">
+        <section className="mt-20" id="metricas">
           <SectionTitle title={t.metricsTitle} id="metricasTitle" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            {t.metrics.map((item, idx) => (
-              <article
-                key={item}
-                className={`rounded-2xl border border-line bg-gradient-to-b from-panel to-panelSoft p-4 text-sm font-semibold text-text ${idx % 5 === 0 ? "lg:col-span-3" : "lg:col-span-2"}`}
-              >
-                <p className="text-xs uppercase tracking-[0.12em] text-muted">Metric</p>
-                <p className="mt-1">{item}</p>
-              </article>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {t.metrics.map((item) => (
+              <article key={item} className="rounded-xl border border-line bg-panel p-4 text-sm font-semibold text-text">{item}</article>
             ))}
           </div>
         </section>
 
-        <section className="mt-24">
+        <section className="mt-20">
           <SectionTitle id="personas" title={t.personasTitle} />
-          <div className="grid gap-3 md:grid-cols-4">
-            {t.personas.map(([role, desc], idx) => (
-              <article key={role} className={`rounded-2xl border border-line bg-panel p-5 ${idx === 0 ? "md:col-span-2" : "md:col-span-2 lg:col-span-1"}`}>
+          <div className="grid gap-3 md:grid-cols-2">
+            {t.personas.map(([role, desc]) => (
+              <article key={role} className="rounded-xl border border-line bg-panel p-5">
                 <h3 className="text-lg font-bold">{role}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted">{desc}</p>
               </article>
@@ -319,11 +292,11 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="mt-24" id="integracoes">
+        <section className="mt-20" id="integracoes">
           <SectionTitle id="integracoesTitle" title={t.integrationsTitle} />
-          <div className="grid gap-3 md:grid-cols-3">
-            {t.integrations.map(([title, desc], idx) => (
-              <article key={title} className={`rounded-2xl border border-line bg-panel p-5 ${idx === 3 ? "md:col-span-3" : "md:col-span-1"}`}>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            {t.integrations.map(([title, desc]) => (
+              <article key={title} className="rounded-xl border border-line bg-panel p-5">
                 <h3 className="font-bold">{title}</h3>
                 <p className="mt-2 text-sm text-muted">{desc}</p>
               </article>
@@ -331,11 +304,11 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="dashboard" className="mt-24">
+        <section id="dashboard" className="mt-20">
           <SectionTitle id="dashboardTitle" title={t.dashboardTitle} subtitle={t.dashboardSubtitle} />
-          <div className="grid gap-3 md:grid-cols-6">
-            {t.dashboardCards.map(([title, desc], idx) => (
-              <article key={title} className={`rounded-2xl border border-line bg-gradient-to-b from-panel to-panelSoft p-5 ${idx === 0 ? "md:col-span-6 lg:col-span-3" : "md:col-span-3 lg:col-span-3"}`}>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {t.dashboardCards.map(([title, desc]) => (
+              <article key={title} className="rounded-xl border border-line bg-panel p-5">
                 <h3 className="font-bold">{title}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted">{desc}</p>
               </article>
@@ -343,28 +316,25 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="opensource" className="mt-24 rounded-3xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6 md:p-8">
+        <section id="opensource" className="mt-20 rounded-2xl border border-line bg-panel p-6 md:p-8">
           <SectionTitle id="openSourceTitle" title={t.openTitle} />
-          <ul className="grid gap-3 text-sm leading-7 text-muted md:grid-cols-2">
+          <ul className="grid list-disc gap-2 pl-5 text-sm leading-7 text-muted md:grid-cols-2">
             {t.openBullets.map((item) => (
-              <li key={item} className="rounded-xl border border-line/80 bg-ink/25 px-4 py-3">{item}</li>
+              <li key={item}>{item}</li>
             ))}
           </ul>
         </section>
 
-        <section className="mt-24">
+        <section className="mt-20">
           <SectionTitle id="sinais" title={t.weekTitle} />
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {t.weekItems.map((item, idx) => (
-              <article key={item} className={`rounded-2xl border border-line bg-panel p-4 text-sm text-muted ${idx === 0 ? "lg:col-span-2" : "lg:col-span-1"}`}>
-                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-accent">Actionable signal</p>
-                {item}
-              </article>
+          <div className="grid gap-3 md:grid-cols-2">
+            {t.weekItems.map((item) => (
+              <article key={item} className="rounded-xl border border-line bg-panel p-4 text-sm text-muted">{item}</article>
             ))}
           </div>
         </section>
 
-        <section id="roadmap" className="mt-24 rounded-3xl border border-line bg-gradient-to-br from-panel to-panelSoft p-7 text-center md:p-10">
+        <section id="roadmap" className="mt-20 rounded-2xl border border-line bg-panel p-7 text-center">
           <h2 className="text-2xl font-bold md:text-3xl">{t.finalTitle}</h2>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-muted md:text-base">{t.finalText}</p>
           <a href="/app/login" className="mt-6 inline-flex rounded-full bg-accent px-6 py-3 text-sm font-bold text-ink hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-accent">{t.finalCta}</a>
