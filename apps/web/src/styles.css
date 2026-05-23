@@ -1,39 +1,234 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Space+Grotesk:wght@500;700&display=swap");
+
 :root {
-  color-scheme: light;
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --bg: #061421;
+  --bg-soft: #0b1d2b;
+  --panel: #122536;
+  --line: #2f495f;
+  --text: #e7f0f8;
+  --muted: #9db6cb;
+  --accent: #2ad7a4;
+  --accent-soft: #8df0d0;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#root {
   margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(circle at top right, #d8f1ff 0%, #f6fbff 50%, #eef2f7 100%);
-  color: #102a43;
+  min-height: 100%;
 }
 
-.page {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+body {
+  font-family: "Manrope", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 650px at 90% -5%, #174166 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 15%, #0e3452 0%, transparent 45%),
+    linear-gradient(180deg, #07111b 0%, #071b2c 45%, #061421 100%);
 }
 
-.card {
-  width: min(560px, 100%);
-  border: 1px solid #c9d6e2;
+.site {
+  width: min(1180px, 100% - 40px);
+  margin: 0 auto;
+  padding: 20px 0 72px;
+}
+
+.topbar {
+  position: sticky;
+  top: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: rgba(8, 20, 32, 0.74);
+  border: 1px solid rgba(92, 126, 152, 0.35);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 8px 24px rgba(16, 42, 67, 0.08);
-  padding: 28px;
+  padding: 12px 14px;
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  color: var(--text);
+  text-decoration: none;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.nav {
+  display: flex;
+  gap: 18px;
+}
+
+.nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.hero {
+  padding: 88px 4px 34px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Space Grotesk", sans-serif;
+  margin: 0;
 }
 
 h1 {
-  margin: 0 0 12px;
+  margin-top: 14px;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 1.02;
+  max-width: 900px;
 }
 
-p {
+.lead {
+  max-width: 700px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 1.08rem;
+  line-height: 1.55;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 11px 18px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary {
+  background: linear-gradient(130deg, #27e0ac, #12b3d8);
+  color: #00262d;
+}
+
+.secondary,
+.ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.heroPanel {
+  margin-top: 30px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.heroPanel div,
+.proof article,
+.insights,
+.pricingCard {
+  background: linear-gradient(160deg, rgba(19, 38, 56, 0.86), rgba(11, 29, 44, 0.9));
+  border: 1px solid rgba(98, 130, 155, 0.33);
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.heroPanel span,
+.heroPanel small {
+  display: block;
+}
+
+.heroPanel span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.heroPanel strong {
+  display: block;
+  margin: 8px 0;
+  font-size: 1.55rem;
+}
+
+.heroPanel small {
+  color: #7fdac1;
+}
+
+.proof {
+  margin-top: 38px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.proof h2 {
+  font-size: 1.15rem;
+  margin-bottom: 10px;
+}
+
+.proof p {
   margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.insights {
+  margin-top: 22px;
+}
+
+.insights h3 {
+  margin-bottom: 10px;
+}
+
+.insights ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.pricing {
+  margin-top: 22px;
+}
+
+.pricing h3 {
+  margin: 10px 0;
+}
+
+.pricing p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  max-width: 760px;
+}
+
+@media (max-width: 980px) {
+  .nav {
+    display: none;
+  }
+
+  .heroPanel,
+  .proof {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    padding-top: 52px;
+  }
 }
