@@ -91,52 +91,86 @@ GitHub é a primeira integração implementada. Azure DevOps entra na Fase 7 com
 
 ## Task Dependency Graph
 
-```
-Fase 1 — Fundação production-first (Tasks 1–12)
-  1 → 2 → 3, 4, 5
-  3 → 7, 8, 9, 10
-  4 → 7, 8, 9, 10
-  5 → 7, 8
-  11 → (todas as fases)
-  12 → (todas as fases)
-
-Fase 2 — Núcleo do domínio (Tasks 13–28)
-  13–19 (schema Prisma) → todas as fases seguintes
-  20 → 21 → 22, 23, 24
-  25 → (Fase 3+)
-  26 → (Fase 3+)
-  27 → (todas as fases)
-  28 → (Fase 3+)
-
-Fase 3 — GitHub App (Tasks 29–35)
-  29 → 30 → 31 → 32
-  33 → 34
-  35 → (Fase 4+)
-
-Fase 4 — Sincronização GitHub (Tasks 36–42)
-  36 → 37 → 38 → 39 → 40
-  33, 34 → 41
-  42 → (Fase 5+)
-
-Fase 5 — PR Intelligence (Tasks 43–55)
-  37, 38 → 43, 44, 45, 46, 47, 48, 49
-  43–49 → 50 → 51 → 52
-  52 → 53, 54, 55
-
-Fase 6 — AI Usage (Tasks 56–60)
-  37 → 56 → 57 → 58
-  56 → 59 → 60
-
-Fase 7 — Azure DevOps Foundation (Tasks 61–64)
-  13–19 → 61 (já incluído)
-  26 → 62 → 63 → 64
-
-Fase 8 — DORA parcial (Tasks 65–71)
-  40 → 65 → 66 → 67, 68
-  69 → 70 → 71
-
-Fase 9 — Open source hardening (Tasks 72–80)
-  (todas as fases anteriores) → 72–80
+```json
+{
+  "waves": [
+    {
+      "wave": 1,
+      "description": "Fase 1 - Fundação: monorepo e TypeScript",
+      "tasks": [1, 2]
+    },
+    {
+      "wave": 2,
+      "description": "Fase 1 - Fundação: apps base (api, worker, web)",
+      "tasks": [3, 4, 5]
+    },
+    {
+      "wave": 3,
+      "description": "Fase 1 - Fundação: PostgreSQL, Prisma e Docker",
+      "tasks": [6, 7, 8]
+    },
+    {
+      "wave": 4,
+      "description": "Fase 1 - Fundação: production readiness",
+      "tasks": [9, 10, 11, 12]
+    },
+    {
+      "wave": 5,
+      "description": "Fase 2 - Núcleo: schema Prisma completo",
+      "tasks": [13, 14, 15, 16, 17, 18, 19]
+    },
+    {
+      "wave": 6,
+      "description": "Fase 2 - Núcleo: auth, RBAC e CRUDs",
+      "tasks": [20, 21, 22, 23, 24, 25, 26, 27]
+    },
+    {
+      "wave": 7,
+      "description": "Fase 2 - Núcleo: frontend base",
+      "tasks": [28]
+    },
+    {
+      "wave": 8,
+      "description": "Fase 3 - GitHub App: instalação e webhooks",
+      "tasks": [29, 30, 31, 32, 33, 34, 35]
+    },
+    {
+      "wave": 9,
+      "description": "Fase 4 - Sync GitHub: repositórios e PRs",
+      "tasks": [36, 37, 38, 39, 40, 41, 42]
+    },
+    {
+      "wave": 10,
+      "description": "Fase 5 - PR Intelligence: métricas e calculadores",
+      "tasks": [43, 44, 45, 46, 47, 48, 49, 50]
+    },
+    {
+      "wave": 11,
+      "description": "Fase 5 - PR Intelligence: API e dashboard",
+      "tasks": [51, 52, 53, 54, 55]
+    },
+    {
+      "wave": 12,
+      "description": "Fase 6 - AI Usage: declaração e dashboard",
+      "tasks": [56, 57, 58, 59, 60]
+    },
+    {
+      "wave": 13,
+      "description": "Fase 7 - Azure DevOps Foundation",
+      "tasks": [61, 62, 63, 64]
+    },
+    {
+      "wave": 14,
+      "description": "Fase 8 - DORA parcial",
+      "tasks": [65, 66, 67, 68, 69, 70, 71]
+    },
+    {
+      "wave": 15,
+      "description": "Fase 9 - Open source hardening",
+      "tasks": [72, 73, 74, 75, 76, 77, 78, 79, 80]
+    }
+  ]
+}
 ```
 
 ## Notes
