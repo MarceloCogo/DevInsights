@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: devinsights-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: devinsights
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d devinsights"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

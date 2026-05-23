@@ -321,8 +321,43 @@ Recommended options:
 - AGPL-3.0 if the goal is to protect against closed SaaS forks;
 - MIT if the goal is maximum adoption with minimal restrictions.
 
+## Quickstart (Foundation)
+
+Prerequisites:
+
+- Node.js 22+
+- pnpm 9+
+- Docker + Docker Compose
+
+Steps:
+
+```bash
+cp .env.example .env
+pnpm install
+pnpm dev
+```
+
+Services and health endpoints:
+
+- Web: `http://localhost:3000`
+- API: `http://localhost:3001/health`
+- API Ready: `http://localhost:3001/ready`
+- Worker: `http://localhost:3002/health`
+
+Run only infrastructure:
+
+```bash
+docker compose -f infra/docker-compose.yml up --build
+```
+
 ## Current Status
 
-Specification phase.
+Foundation implementation started.
 
-No implementation should start before the initial Kiro requirements, design and tasks are reviewed and approved.
+Implemented:
+
+- pnpm monorepo structure (`apps/*`, `packages/*`)
+- base API, Web and Worker apps
+- health/ready endpoints and graceful shutdown
+- Docker Compose with PostgreSQL + app services
+- base TypeScript configuration and environment template
