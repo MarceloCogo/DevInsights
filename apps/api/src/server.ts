@@ -29,9 +29,10 @@ const githubAppId = process.env.GITHUB_APP_ID ?? "";
 const githubAppName = process.env.GITHUB_APP_NAME ?? "";
 const githubAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY ?? "";
 const databaseUrl = process.env.DATABASE_URL;
+const hasDatabase = Boolean(databaseUrl);
 
 const oauthStateStore = new Map<string, number>();
-const pool = new Pool({ connectionString: databaseUrl });
+const pool = hasDatabase ? new Pool({ connectionString: databaseUrl }) : null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "../../web/dist");
 
@@ -112,7 +113,13 @@ const setSessionCookie = (sessionId: string) => {
 const clearSessionCookie = () => `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 
 const ensureSchema = async () => {
-  await pool.query(`
+  if (!pool) {
+    return;
+  }
+
+  const db = pool;
+
+  await db.query(`
     create table if not exists users (
       id bigserial primary key,
       github_id bigint unique not null,
@@ -184,6 +191,23 @@ const fetchGitHubUser = async (accessToken: string): Promise<GitHubUser> => {
   return (await response.json()) as GitHubUser;
 };
 
+const ensureDatabase = (reply: { code: (statusCode: number) => { send: (payload: unknown) => unknown } }) => {
+  if (pool) {
+    return true;
+  }
+
+  reply.code(503).send({ error: "database_not_configured" });
+  return false;
+};
+
+const getPool = () => {
+  if (!pool) {
+    throw new Error("database_not_configured");
+  }
+
+  return pool;
+};
+
 const exchangeOAuthCode = async (code: string) => {
   const response = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -243,6 +267,12 @@ const createInstallationToken = async (installationId: number) => {
 };
 
 const getSessionUser = async (cookieHeader: string | undefined) => {
+  if (!pool) {
+    return null;
+  }
+
+  const db = pool;
+
   const cookies = parseCookies(cookieHeader);
   const sessionId = cookies[sessionCookieName];
 
@@ -250,7 +280,7 @@ const getSessionUser = async (cookieHeader: string | undefined) => {
     return null;
   }
 
-  const result = await pool.query(
+  const result = await db.query(
     `
       select u.id, u.github_id, u.github_login, u.name, u.avatar_url
       from sessions s
@@ -282,7 +312,7 @@ app.options("*", async (_, reply) => {
 });
 
 app.get("/health", async () => ({ status: "ok", service: "api" }));
-app.get("/ready", async () => ({ status: "ready", service: "api" }));
+app.get("/ready", async () => ({ status: hasDatabase ? "ready" : "degraded", service: "api" }));
 
 app.get(`${apiBasePath}/auth/github/login`, async (_, reply) => {
   if (!githubClientId || !githubOAuthCallbackUrl) {
@@ -300,16 +330,21 @@ app.get(`${apiBasePath}/auth/github/login`, async (_, reply) => {
 });
 
 app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
   const { code, state } = request.query as { code?: string; state?: string };
   if (!code || !verifyState(state)) {
     return reply.code(400).send({ error: "invalid_oauth_state_or_code" });
   }
 
   try {
+    const db = getPool();
     const accessToken = await exchangeOAuthCode(code);
     const githubUser = await fetchGitHubUser(accessToken);
 
-    const upsertResult = await pool.query(
+    const upsertResult = await db.query(
       `
         insert into users (github_id, github_login, name, avatar_url)
         values ($1, $2, $3, $4)
@@ -322,7 +357,7 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
 
     const user = upsertResult.rows[0];
 
-    const orgResult = await pool.query(
+    const orgResult = await db.query(
       `
         select om.organization_id
         from organization_members om
@@ -335,18 +370,18 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
 
     if (orgResult.rowCount === 0) {
       const organizationName = `${githubUser.login}'s Organization`;
-      const createdOrg = await pool.query(
+      const createdOrg = await db.query(
         `insert into organizations (name, created_by_user_id) values ($1, $2) returning id`,
         [organizationName, user.id]
       );
-      await pool.query(
+      await db.query(
         `insert into organization_members (organization_id, user_id, role) values ($1, $2, 'owner')`,
         [createdOrg.rows[0].id, user.id]
       );
     }
 
     const sessionId = randomBytes(24).toString("hex");
-    await pool.query(`insert into sessions (id, user_id, expires_at) values ($1, $2, now() + interval '7 days')`, [
+    await db.query(`insert into sessions (id, user_id, expires_at) values ($1, $2, now() + interval '7 days')`, [
       sessionId,
       user.id
     ]);
@@ -360,12 +395,17 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
 });
 
 app.get(`${apiBasePath}/auth/me`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
   const session = await getSessionUser(request.headers.cookie);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
 
-  const orgResult = await pool.query(
+  const orgResult = await db.query(
     `
       select o.id, o.name
       from organization_members om
@@ -384,9 +424,14 @@ app.get(`${apiBasePath}/auth/me`, async (request, reply) => {
 });
 
 app.post(`${apiBasePath}/auth/logout`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
   const session = await getSessionUser(request.headers.cookie);
   if (session) {
-    await pool.query(`delete from sessions where id = $1`, [session.sessionId]);
+    await db.query(`delete from sessions where id = $1`, [session.sessionId]);
   }
 
   reply.header("Set-Cookie", clearSessionCookie());
@@ -394,6 +439,10 @@ app.post(`${apiBasePath}/auth/logout`, async (request, reply) => {
 });
 
 app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
   const session = await getSessionUser(request.headers.cookie);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
@@ -408,6 +457,11 @@ app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply)
 });
 
 app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
   const session = await getSessionUser(request.headers.cookie);
   if (!session) {
     return reply.redirect(`${getWebBaseUrl(request)}/app/login`);
@@ -422,7 +476,7 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
     return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_installation_id`);
   }
 
-  const orgResult = await pool.query(
+  const orgResult = await db.query(
     `
       select organization_id
       from organization_members
@@ -438,7 +492,7 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
   }
 
   const organizationId = orgResult.rows[0].organization_id;
-  await pool.query(
+  await db.query(
     `
       insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
       values ($1, $2, null, null, $3)
@@ -452,12 +506,17 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
 });
 
 app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
   const session = await getSessionUser(request.headers.cookie);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
 
-  const installationResult = await pool.query(
+  const installationResult = await db.query(
     `
       select gi.organization_id, gi.installation_id
       from organization_members om
@@ -494,7 +553,7 @@ app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply
     };
 
     for (const repository of payload.repositories) {
-      await pool.query(
+      await db.query(
         `
           insert into tracked_repositories (organization_id, repository_id, full_name, private)
           values ($1, $2, $3, $4)
@@ -505,7 +564,7 @@ app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply
       );
     }
 
-    const savedRepositories = await pool.query(
+    const savedRepositories = await db.query(
       `
         select repository_id as id, full_name, private, selected
         from tracked_repositories
@@ -526,6 +585,11 @@ app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply
 });
 
 app.post(`${apiBasePath}/integrations/github/repositories/select`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
   const session = await getSessionUser(request.headers.cookie);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
@@ -534,7 +598,7 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
   const body = request.body as { repositoryIds?: number[] };
   const repositoryIds = Array.isArray(body.repositoryIds) ? body.repositoryIds : [];
 
-  const orgResult = await pool.query(
+  const orgResult = await db.query(
     `
       select organization_id
       from organization_members
@@ -550,10 +614,10 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
   }
 
   const organizationId = orgResult.rows[0].organization_id;
-  await pool.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
+  await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
 
   if (repositoryIds.length > 0) {
-    await pool.query(
+    await db.query(
       `update tracked_repositories set selected = true where organization_id = $1 and repository_id = any($2::bigint[])`,
       [organizationId, repositoryIds]
     );
@@ -582,13 +646,9 @@ if (existsSync(webDistPath)) {
 
 const start = async () => {
   try {
-    if (!databaseUrl) {
-      throw new Error("DATABASE_URL is required");
-    }
-
     await ensureSchema();
     await app.listen({ port, host });
-    app.log.info(`api listening on ${port}`);
+    app.log.info({ hasDatabase }, `api listening on ${port}`);
   } catch (error) {
     app.log.error(error);
     process.exit(1);
@@ -598,7 +658,9 @@ const start = async () => {
 const shutdown = async (signal: NodeJS.Signals) => {
   app.log.info({ signal }, "shutting down api");
   await app.close();
-  await pool.end();
+  if (pool) {
+    await pool.end();
+  }
   process.exit(0);
 };
 
