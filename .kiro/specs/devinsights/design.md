@@ -725,10 +725,10 @@ Um PR é considerado grande quando:
 
 ### 11.1 Autenticação no MVP
 
-- E-mail e senha com hash bcrypt/argon2
+- OAuth com GitHub como autenticação padrão
 - Sessão via cookie HttpOnly, Secure, SameSite=Strict
 - Sem JWT no MVP (sessão server-side é mais simples e segura)
-- Rate limit em `/auth/login`
+- Rate limit em `/auth/github/callback`
 
 ### 11.2 RBAC
 

@@ -37,7 +37,7 @@ Criar base técnica do monorepo, apps, banco e padrões de desenvolvimento.
 - Prisma executa migrations.
 - Testes rodam.
 
-## 3. Fase 1 — Auth, Organização e RBAC
+## 3. Fase 1 — Auth GitHub, Organização e RBAC
 
 ### Objetivo
 
@@ -47,7 +47,7 @@ Permitir acesso autenticado e criação da estrutura básica.
 
 - Criar tabela organizations.
 - Criar tabela users.
-- Criar autenticação local.
+- Criar autenticação OAuth com GitHub como padrão.
 - Criar sessão segura.
 - Criar papéis de usuário.
 - Criar middleware de autorização.
@@ -55,13 +55,13 @@ Permitir acesso autenticado e criação da estrutura básica.
 - Criar CRUD de squads.
 - Criar membros de squad.
 - Criar audit log inicial.
-- Criar telas de login e organização.
+- Criar tela de login com botão "Entrar com GitHub" e onboarding de organização.
 
 ### Definition of done
 
 - Usuário consegue criar organização.
 - Usuário consegue criar squads.
-- Usuário consegue convidar/adicionar membros.
+- Usuário consegue criar organização no primeiro acesso.
 - Rotas protegidas exigem autenticação.
 - Ações sensíveis geram audit log.
 
@@ -361,4 +361,3 @@ Preparar para publicação open source.
 17. Implementar automations.
 18. Implementar DevEx.
 19. Preparar open source.
-

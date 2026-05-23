@@ -27,7 +27,7 @@ GitHub é a primeira integração implementada. Azure DevOps entra na Fase 7 com
 - [ ] 17. Criar schema Prisma: workflow_runs, ai_usage_declarations, metric_snapshots
 - [ ] 18. Criar schema Prisma: integration_sync_jobs, audit_logs, github_installations
 - [ ] 19. Criar schema Prisma: work_items, work_item_status_transitions, work_item_pull_request_links, sprints
-- [ ] 20. Implementar autenticação com e-mail e senha (bcrypt, sessão HttpOnly)
+- [ ] 20. Implementar autenticação OAuth com GitHub como padrão (sem login/senha local no MVP), com sessão HttpOnly
 - [ ] 21. Implementar middleware de autorização e RBAC
 - [ ] 22. Implementar CRUD de organizações com isolamento de dados
 - [ ] 23. Implementar CRUD de squads e membros
@@ -35,7 +35,7 @@ GitHub é a primeira integração implementada. Azure DevOps entra na Fase 7 com
 - [ ] 25. Implementar privacy settings com defaults restritivos
 - [ ] 26. Implementar ports ICodeHostingProvider e IProjectManagementProvider
 - [ ] 27. Implementar audit log para ações sensíveis
-- [ ] 28. Criar telas de login, organização e squads no frontend
+- [ ] 28. Criar telas de login (botão "Entrar com GitHub"), organização e squads no frontend com fluxo de primeiro acesso
 - [ ] 29. Implementar fluxo de instalação do GitHub App (install URL + callback)
 - [ ] 30. Salvar installation_id e dados da instalação com criptografia
 - [ ] 31. Listar repositórios autorizados via API GitHub
@@ -121,7 +121,7 @@ GitHub é a primeira integração implementada. Azure DevOps entra na Fase 7 com
     },
     {
       "wave": 6,
-      "description": "Fase 2 - Núcleo: auth, RBAC e CRUDs",
+      "description": "Fase 2 - Núcleo: auth GitHub, RBAC e CRUDs",
       "tasks": [20, 21, 22, 23, 24, 25, 26, 27]
     },
     {
@@ -181,7 +181,7 @@ Estabelece a base técnica do monorepo com foco em production-readiness desde o 
 **Segurança/Privacidade:** `.env.example` não deve conter valores reais. Secrets nunca devem ser commitados.
 
 ### Fase 2 — Núcleo do domínio
-Cria as entidades centrais do produto e a base arquitetural para múltiplos provedores. O schema Prisma inclui as tabelas de Azure DevOps desde o início para evitar migrations disruptivas no futuro.
+Cria as entidades centrais do produto e a base arquitetural para múltiplos provedores. A autenticação padrão do MVP é OAuth com GitHub, sem login/senha local. O schema Prisma inclui as tabelas de Azure DevOps desde o início para evitar migrations disruptivas no futuro.
 
 **Segurança/Privacidade:** Privacy settings criados com defaults restritivos. RBAC implementado antes de qualquer dado sensível ser exposto.
 

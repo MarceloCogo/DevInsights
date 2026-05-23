@@ -32,9 +32,13 @@ Formato:
 
 ## 3. Auth
 
-### POST /auth/login
+### GET /auth/github/login
 
-Login do usuário.
+Inicia autenticação OAuth com GitHub.
+
+### GET /auth/github/callback
+
+Processa callback OAuth do GitHub e cria sessão do usuário.
 
 ### POST /auth/logout
 
@@ -384,4 +388,3 @@ Query params:
 - to
 - page
 - pageSize
-

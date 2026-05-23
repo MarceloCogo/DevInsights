@@ -166,11 +166,11 @@ Times usam GitHub para código e Azure DevOps para backlog, mas não conseguem c
 
 ### RF-01 — Autenticação
 
-- RF-01.1: O sistema deve permitir login com e-mail e senha.
+- RF-01.1: O sistema deve permitir login com OAuth GitHub como autenticação padrão.
 - RF-01.2: O sistema deve manter sessão segura via cookie HttpOnly.
 - RF-01.3: O sistema deve permitir logout.
 - RF-01.4: O sistema deve retornar o usuário autenticado e suas permissões.
-- RF-01.5: O sistema deve suportar convite de novos usuários por e-mail.
+- RF-01.5: O sistema deve suportar convite de novos usuários por link seguro (sem senha local no MVP).
 
 ### RF-02 — Organizações
 
@@ -463,7 +463,7 @@ O MVP foca em GitHub PR Intelligence e rastreamento declarativo de uso de IA.
 
 | Área | Funcionalidade |
 |------|---------------|
-| Auth | Login e-mail/senha, sessão segura, RBAC básico |
+| Auth | Login OAuth GitHub, sessão segura, RBAC básico |
 | Organização | CRUD de organização |
 | Squads | CRUD de squads, membros, associação com repositórios |
 | Usuários | Convite, papéis, associação com GitHub login |
