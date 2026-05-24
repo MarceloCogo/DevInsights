@@ -137,6 +137,38 @@ type Repository = {
   selected: boolean;
 };
 
+type DashboardOverview = {
+  selectedRepositories: number;
+  openPrs: number;
+  throughput7d: number;
+  throughput30d: number;
+  avgPrSize: number;
+  stalePrs: number;
+  lastSync: {
+    status: string;
+    started_at: string | null;
+    finished_at: string | null;
+    total_prs: number;
+  } | null;
+};
+
+type PullRequestItem = {
+  github_pr_id: number;
+  number: number;
+  title: string;
+  repository_full_name: string;
+  author_login: string | null;
+  state: string;
+  draft: boolean;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  opened_at: string | null;
+  merged_at: string | null;
+  updated_at: string | null;
+  html_url: string | null;
+};
+
 function AppDashboardPage() {
   const locale = detectLocale();
   const isPt = locale === "pt-BR";
@@ -147,6 +179,13 @@ function AppDashboardPage() {
   const [repositories, setRepositories] = React.useState<Repository[]>([]);
   const [savingRepos, setSavingRepos] = React.useState(false);
   const [changingOrg, setChangingOrg] = React.useState(false);
+  const [overview, setOverview] = React.useState<DashboardOverview | null>(null);
+  const [pullRequests, setPullRequests] = React.useState<PullRequestItem[]>([]);
+  const [repoFilter, setRepoFilter] = React.useState("all");
+  const [stateFilter, setStateFilter] = React.useState("all");
+  const [periodFilter, setPeriodFilter] = React.useState<"7d" | "30d">("30d");
+  const [availableRepos, setAvailableRepos] = React.useState<string[]>([]);
+  const [section, setSection] = React.useState<"overview" | "pr" | "integrations" | "settings">("overview");
 
   const loadBootstrap = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/app/bootstrap`, { credentials: "include" });
@@ -174,6 +213,34 @@ function AppDashboardPage() {
     return payload.repositories;
   }, [apiBaseUrl]);
 
+  const loadOverview = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/dashboard/overview`, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("Failed to load dashboard overview");
+    }
+
+    return (await response.json()) as DashboardOverview;
+  }, [apiBaseUrl]);
+
+  const loadPullRequests = React.useCallback(async () => {
+    const params = new URLSearchParams();
+    params.set("period", periodFilter);
+    params.set("state", stateFilter);
+    if (repoFilter !== "all") {
+      params.set("repository", repoFilter);
+    }
+
+    const response = await fetch(`${apiBaseUrl}/dashboard/pull-requests?${params.toString()}`, {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      throw new Error("Failed to load pull requests");
+    }
+
+    const payload = (await response.json()) as { repositories: string[]; pullRequests: PullRequestItem[] };
+    return payload;
+  }, [apiBaseUrl, periodFilter, stateFilter, repoFilter]);
+
   React.useEffect(() => {
     const load = async () => {
       try {
@@ -188,6 +255,13 @@ function AppDashboardPage() {
           const repos = await loadRepositories();
           setRepositories(repos);
         }
+
+        const overviewPayload = await loadOverview();
+        setOverview(overviewPayload);
+
+        const prsPayload = await loadPullRequests();
+        setPullRequests(prsPayload.pullRequests);
+        setAvailableRepos(prsPayload.repositories);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unknown error");
       } finally {
@@ -196,7 +270,45 @@ function AppDashboardPage() {
     };
 
     void load();
-  }, [loadBootstrap, loadRepositories]);
+  }, [loadBootstrap, loadOverview, loadPullRequests, loadRepositories]);
+
+  React.useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    const refresh = async () => {
+      try {
+        const overviewPayload = await loadOverview();
+        setOverview(overviewPayload);
+        const prsPayload = await loadPullRequests();
+        setPullRequests(prsPayload.pullRequests);
+        setAvailableRepos(prsPayload.repositories);
+      } catch {
+        // keep current values
+      }
+    };
+
+    void refresh();
+  }, [data?.activeOrganizationId, loadOverview, loadPullRequests]);
+
+  React.useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    const refreshPullRequests = async () => {
+      try {
+        const prsPayload = await loadPullRequests();
+        setPullRequests(prsPayload.pullRequests);
+        setAvailableRepos(prsPayload.repositories);
+      } catch {
+        // ignore filter refresh error
+      }
+    };
+
+    void refreshPullRequests();
+  }, [periodFilter, stateFilter, repoFilter, data, loadPullRequests]);
 
   React.useEffect(() => {
     if (!data?.sync || (data.sync.status !== "pending" && data.sync.status !== "running")) {
@@ -315,6 +427,13 @@ function AppDashboardPage() {
 
       const repos = await loadRepositories();
       setRepositories(repos);
+
+      const overviewPayload = await loadOverview();
+      setOverview(overviewPayload);
+
+      const prsPayload = await loadPullRequests();
+      setPullRequests(prsPayload.pullRequests);
+      setAvailableRepos(prsPayload.repositories);
     } catch (switchError) {
       setError(switchError instanceof Error ? switchError.message : "Unknown error");
     } finally {
@@ -338,6 +457,13 @@ function AppDashboardPage() {
       if (bootstrap) {
         setData(bootstrap);
       }
+
+      const overviewPayload = await loadOverview();
+      setOverview(overviewPayload);
+
+      const prsPayload = await loadPullRequests();
+      setPullRequests(prsPayload.pullRequests);
+      setAvailableRepos(prsPayload.repositories);
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : "Unknown error");
     }
@@ -356,29 +482,56 @@ function AppDashboardPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-ink px-5 py-10 text-text">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_15%,rgba(34,184,240,0.14),transparent_32%),radial-gradient(circle_at_90%_0%,rgba(40,215,164,0.12),transparent_40%)]" />
-      <div className="relative mx-auto w-full max-w-6xl">
-        <header className="rounded-2xl border border-line bg-panel/80 p-5 backdrop-blur md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-accent">DevInsights App</p>
-              <h1 className="mt-2 text-2xl font-bold md:text-3xl">
-                {isPt ? "Dashboard inicial" : "Initial dashboard"}
-              </h1>
-              <p className="mt-1 text-sm text-muted">
-                {isPt ? "Usuário autenticado via GitHub" : "User authenticated with GitHub"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
-            >
-              {isPt ? "Sair" : "Sign out"}
-            </button>
-          </div>
-        </header>
+      <div className="relative mx-auto grid w-full max-w-7xl gap-4 md:grid-cols-[250px,1fr]">
+        <aside className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur md:sticky md:top-6 md:h-[calc(100vh-5rem)]">
+          <a href="/" className="mb-5 inline-flex items-center gap-2 text-base font-bold">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-panelSoft">DI</span>
+            DevInsights
+          </a>
+          <nav className="space-y-1">
+            {[
+              ["overview", isPt ? "Overview" : "Overview"],
+              ["pr", "PR Intelligence"],
+              ["integrations", isPt ? "Integrações" : "Integrations"],
+              ["settings", isPt ? "Configurações" : "Settings"]
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSection(key as "overview" | "pr" | "integrations" | "settings")}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${
+                  section === key ? "bg-accent text-ink" : "text-muted hover:bg-panelSoft hover:text-text"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </aside>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-4">
+        <div>
+          <header className="rounded-2xl border border-line bg-panel/80 p-5 backdrop-blur md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.16em] text-accent">DevInsights App</p>
+                <h1 className="mt-2 text-2xl font-bold md:text-3xl">
+                  {isPt ? "Dashboard principal" : "Main dashboard"}
+                </h1>
+                <p className="mt-1 text-sm text-muted">
+                  {data?.user.name ?? data?.user.github_login} • {data?.organization?.name ?? "-"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
+              >
+                {isPt ? "Sair" : "Sign out"}
+              </button>
+            </div>
+          </header>
+
+          <section className="mt-6 grid gap-4 md:grid-cols-4">
           <article className="rounded-2xl border border-line bg-panel p-5">
             <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Status" : "Status"}</p>
             <p className="mt-2 text-lg font-semibold text-text">
@@ -403,10 +556,10 @@ function AppDashboardPage() {
               {isPt ? `Etapa ${onboardingStep}/4` : `Step ${onboardingStep}/4`}
             </p>
           </article>
-        </section>
+          </section>
 
-        {data?.organizations && data.organizations.length > 1 ? (
-          <section className="mt-4 rounded-2xl border border-line bg-panel p-4">
+          {data?.organizations && data.organizations.length > 1 ? (
+            <section className="mt-4 rounded-2xl border border-line bg-panel p-4">
             <p className="text-xs uppercase tracking-[0.12em] text-muted">
               {isPt ? "Organização ativa" : "Active organization"}
             </p>
@@ -427,10 +580,11 @@ function AppDashboardPage() {
                 </button>
               ))}
             </div>
-          </section>
-        ) : null}
+            </section>
+          ) : null}
 
-        <section className="mt-6 rounded-2xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6">
+          {section === "integrations" || section === "overview" ? (
+            <section className="mt-6 rounded-2xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6">
           <h2 className="text-xl font-bold">{isPt ? "Onboarding self-service" : "Self-service onboarding"}</h2>
           {!data?.integration.connected ? (
             <div className="mt-4">
@@ -525,21 +679,137 @@ function AppDashboardPage() {
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
                 <p className="text-xs text-muted">{isPt ? "Repos monitorados" : "Monitored repos"}</p>
-                <p className="mt-1 font-semibold text-text">{data.repositoryInsights.repositories}</p>
+                <p className="mt-1 font-semibold text-text">{overview?.selectedRepositories ?? data.repositoryInsights.repositories}</p>
               </article>
               <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
                 <p className="text-xs text-muted">{isPt ? "PRs abertos" : "Open PRs"}</p>
-                <p className="mt-1 font-semibold text-text">{data.repositoryInsights.open_prs}</p>
+                <p className="mt-1 font-semibold text-text">{overview?.openPrs ?? data.repositoryInsights.open_prs}</p>
               </article>
               <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
                 <p className="text-xs text-muted">{isPt ? "PRs merged" : "Merged PRs"}</p>
-                <p className="mt-1 font-semibold text-text">{data.repositoryInsights.merged_prs}</p>
+                <p className="mt-1 font-semibold text-text">{overview?.throughput30d ?? data.repositoryInsights.merged_prs}</p>
               </article>
             </div>
           ) : null}
 
           {error ? <p className="mt-4 text-sm text-red-300">{error}</p> : null}
-        </section>
+            </section>
+          ) : null}
+
+          {section === "pr" || section === "overview" ? (
+            <section className="mt-6 rounded-2xl border border-line bg-panel p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold">{isPt ? "PR Intelligence" : "PR Intelligence"}</h2>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={periodFilter}
+                onChange={(event) => setPeriodFilter(event.target.value as "7d" | "30d")}
+                className="rounded-lg border border-line bg-ink/30 px-3 py-2 text-sm"
+              >
+                <option value="7d">{isPt ? "Últimos 7 dias" : "Last 7 days"}</option>
+                <option value="30d">{isPt ? "Últimos 30 dias" : "Last 30 days"}</option>
+              </select>
+              <select
+                value={stateFilter}
+                onChange={(event) => setStateFilter(event.target.value)}
+                className="rounded-lg border border-line bg-ink/30 px-3 py-2 text-sm"
+              >
+                <option value="all">{isPt ? "Todos estados" : "All states"}</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+              </select>
+              <select
+                value={repoFilter}
+                onChange={(event) => setRepoFilter(event.target.value)}
+                className="rounded-lg border border-line bg-ink/30 px-3 py-2 text-sm"
+              >
+                <option value="all">{isPt ? "Todos repositórios" : "All repositories"}</option>
+                {availableRepos.map((repo) => (
+                  <option key={repo} value={repo}>
+                    {repo}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
+              <p className="text-xs text-muted">Throughput 7d</p>
+              <p className="mt-1 text-lg font-semibold">{overview?.throughput7d ?? 0}</p>
+            </article>
+            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
+              <p className="text-xs text-muted">Throughput 30d</p>
+              <p className="mt-1 text-lg font-semibold">{overview?.throughput30d ?? 0}</p>
+            </article>
+            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
+              <p className="text-xs text-muted">{isPt ? "Tamanho médio PR" : "Average PR size"}</p>
+              <p className="mt-1 text-lg font-semibold">{overview?.avgPrSize ?? 0}</p>
+            </article>
+            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
+              <p className="text-xs text-muted">Stale PRs</p>
+              <p className="mt-1 text-lg font-semibold">{overview?.stalePrs ?? 0}</p>
+            </article>
+          </div>
+
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line/70">
+            <table className="min-w-full border-collapse text-left text-sm">
+              <thead className="bg-ink/30 text-muted">
+                <tr>
+                  <th className="px-3 py-2">PR</th>
+                  <th className="px-3 py-2">Repo</th>
+                  <th className="px-3 py-2">Author</th>
+                  <th className="px-3 py-2">State</th>
+                  <th className="px-3 py-2">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pullRequests.map((pr) => (
+                  <tr key={pr.github_pr_id} className="border-t border-line/50">
+                    <td className="px-3 py-2">
+                      {pr.html_url ? (
+                        <a href={pr.html_url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                          #{pr.number} {pr.title}
+                        </a>
+                      ) : (
+                        <>#{pr.number} {pr.title}</>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-muted">{pr.repository_full_name}</td>
+                    <td className="px-3 py-2 text-muted">{pr.author_login ?? "-"}</td>
+                    <td className="px-3 py-2 text-muted">{pr.state}</td>
+                    <td className="px-3 py-2 text-muted">{pr.additions + pr.deletions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pullRequests.length === 0 ? (
+              <p className="px-3 py-4 text-sm text-muted">{isPt ? "Nenhum PR encontrado para os filtros atuais." : "No pull requests found for current filters."}</p>
+            ) : null}
+          </div>
+            </section>
+          ) : null}
+
+          {section === "settings" ? (
+            <section className="mt-6 rounded-2xl border border-line bg-panel p-6">
+              <h2 className="text-xl font-bold">{isPt ? "Configurações" : "Settings"}</h2>
+              <p className="mt-2 text-sm text-muted">
+                {isPt
+                  ? "Nesta fase, as configurações principais são troca de organização ativa e gerenciamento da integração GitHub."
+                  : "At this stage, main settings are active organization switching and GitHub integration management."}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={disconnectIntegration}
+                  className="rounded-full border border-red-400/40 px-5 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/10"
+                >
+                  {isPt ? "Desconectar integração" : "Disconnect integration"}
+                </button>
+              </div>
+            </section>
+          ) : null}
+        </div>
       </div>
     </main>
   );

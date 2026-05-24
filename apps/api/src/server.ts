@@ -211,11 +211,36 @@ const ensureSchema = async () => {
       primary key (organization_id, repository_id)
     );
 
+    create table if not exists pull_requests (
+      id bigserial primary key,
+      organization_id bigint not null references organizations(id),
+      repository_id bigint not null,
+      repository_full_name text not null,
+      github_pr_id bigint not null,
+      number integer not null,
+      title text not null,
+      author_login text,
+      state text not null,
+      draft boolean not null default false,
+      additions integer not null default 0,
+      deletions integer not null default 0,
+      changed_files integer not null default 0,
+      opened_at timestamptz,
+      closed_at timestamptz,
+      merged_at timestamptz,
+      updated_at timestamptz,
+      html_url text,
+      created_at timestamptz not null default now(),
+      unique (organization_id, repository_id, github_pr_id)
+    );
+
     alter table sessions add column if not exists active_organization_id bigint references organizations(id);
 
     create unique index if not exists github_installations_installation_id_idx on github_installations (installation_id);
     create index if not exists tracked_repositories_org_selected_idx on tracked_repositories (organization_id, selected);
     create index if not exists sync_jobs_org_created_idx on integration_sync_jobs (organization_id, created_at desc);
+    create index if not exists pull_requests_org_updated_idx on pull_requests (organization_id, updated_at desc);
+    create index if not exists pull_requests_org_state_idx on pull_requests (organization_id, state);
   `);
 };
 
@@ -456,12 +481,76 @@ const runInitialSync = async (organizationId: number) => {
       throw new Error(`failed_repo_sync_${repository.full_name}_${pullsResponse.status}`);
     }
 
-    const pulls = (await pullsResponse.json()) as Array<{ state: string; merged_at: string | null }>;
+    const pulls = (await pullsResponse.json()) as Array<{
+      id: number;
+      number: number;
+      title: string;
+      state: string;
+      draft: boolean;
+      additions?: number;
+      deletions?: number;
+      changed_files?: number;
+      user?: { login?: string };
+      created_at?: string;
+      closed_at?: string | null;
+      merged_at?: string | null;
+      updated_at?: string;
+      html_url?: string;
+    }>;
     const openPrs = pulls.filter((item) => item.state === "open").length;
     const mergedPrs = pulls.filter((item) => item.merged_at !== null).length;
 
     totalPrs += pulls.length;
     processed += 1;
+
+    for (const pr of pulls) {
+      await db.query(
+        `
+          insert into pull_requests (
+            organization_id, repository_id, repository_full_name, github_pr_id, number, title, author_login,
+            state, draft, additions, deletions, changed_files, opened_at, closed_at, merged_at, updated_at, html_url
+          )
+          values (
+            $1, $2, $3, $4, $5, $6, $7,
+            $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+          )
+          on conflict (organization_id, repository_id, github_pr_id)
+          do update set
+            number = excluded.number,
+            title = excluded.title,
+            author_login = excluded.author_login,
+            state = excluded.state,
+            draft = excluded.draft,
+            additions = excluded.additions,
+            deletions = excluded.deletions,
+            changed_files = excluded.changed_files,
+            opened_at = excluded.opened_at,
+            closed_at = excluded.closed_at,
+            merged_at = excluded.merged_at,
+            updated_at = excluded.updated_at,
+            html_url = excluded.html_url
+        `,
+        [
+          organizationId,
+          repository.repository_id,
+          repository.full_name,
+          pr.id,
+          pr.number,
+          pr.title,
+          pr.user?.login ?? null,
+          pr.state,
+          Boolean(pr.draft),
+          pr.additions ?? 0,
+          pr.deletions ?? 0,
+          pr.changed_files ?? 0,
+          pr.created_at ?? null,
+          pr.closed_at ?? null,
+          pr.merged_at ?? null,
+          pr.updated_at ?? null,
+          pr.html_url ?? null
+        ]
+      );
+    }
 
     await db.query(
       `
@@ -1075,6 +1164,170 @@ app.post(`${apiBasePath}/integrations/github/disconnect`, async (request, reply)
   await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
 
   return { ok: true, status: "disconnected" };
+});
+
+app.get(`${apiBasePath}/dashboard/overview`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
+    return reply.code(400).send({ error: "missing_organization" });
+  }
+
+  const now = new Date();
+  const staleCutoff = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+  const reposResult = await db.query(
+    `select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`,
+    [organizationId]
+  );
+  const openResult = await db.query(
+    `select count(*)::int as count from pull_requests where organization_id = $1 and state = 'open'`,
+    [organizationId]
+  );
+  const merged7dResult = await db.query(
+    `
+      select count(*)::int as count
+      from pull_requests
+      where organization_id = $1 and merged_at >= now() - interval '7 days'
+    `,
+    [organizationId]
+  );
+  const merged30dResult = await db.query(
+    `
+      select count(*)::int as count
+      from pull_requests
+      where organization_id = $1 and merged_at >= now() - interval '30 days'
+    `,
+    [organizationId]
+  );
+  const avgSizeResult = await db.query(
+    `
+      select coalesce(round(avg(additions + deletions)), 0)::int as avg_size
+      from pull_requests
+      where organization_id = $1
+    `,
+    [organizationId]
+  );
+  const staleResult = await db.query(
+    `
+      select count(*)::int as count
+      from pull_requests
+      where organization_id = $1 and state = 'open' and coalesce(updated_at, opened_at) < $2
+    `,
+    [organizationId, staleCutoff]
+  );
+  const latestSyncResult = await db.query(
+    `
+      select status, started_at, finished_at, total_prs
+      from integration_sync_jobs
+      where organization_id = $1
+      order by created_at desc
+      limit 1
+    `,
+    [organizationId]
+  );
+
+  return {
+    selectedRepositories: reposResult.rows[0]?.count ?? 0,
+    openPrs: openResult.rows[0]?.count ?? 0,
+    throughput7d: merged7dResult.rows[0]?.count ?? 0,
+    throughput30d: merged30dResult.rows[0]?.count ?? 0,
+    avgPrSize: avgSizeResult.rows[0]?.avg_size ?? 0,
+    stalePrs: staleResult.rows[0]?.count ?? 0,
+    lastSync: latestSyncResult.rows[0] ?? null
+  };
+});
+
+app.get(`${apiBasePath}/dashboard/pull-requests`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
+    return reply.code(400).send({ error: "missing_organization" });
+  }
+
+  const query = request.query as {
+    state?: string;
+    repository?: string;
+    period?: "7d" | "30d";
+  };
+
+  const conditions: string[] = ["organization_id = $1"];
+  const values: unknown[] = [organizationId];
+
+  if (query.state && ["open", "closed", "all"].includes(query.state)) {
+    if (query.state !== "all") {
+      values.push(query.state);
+      conditions.push(`state = $${values.length}`);
+    }
+  }
+
+  if (query.repository) {
+    values.push(query.repository);
+    conditions.push(`repository_full_name = $${values.length}`);
+  }
+
+  if (query.period && ["7d", "30d"].includes(query.period)) {
+    const interval = query.period === "7d" ? "7 days" : "30 days";
+    conditions.push(`coalesce(updated_at, opened_at, created_at) >= now() - interval '${interval}'`);
+  }
+
+  const prsResult = await db.query(
+    `
+      select
+        github_pr_id,
+        number,
+        title,
+        repository_full_name,
+        author_login,
+        state,
+        draft,
+        additions,
+        deletions,
+        changed_files,
+        opened_at,
+        merged_at,
+        updated_at,
+        html_url
+      from pull_requests
+      where ${conditions.join(" and ")}
+      order by coalesce(updated_at, opened_at, created_at) desc
+      limit 200
+    `,
+    values
+  );
+
+  const reposResult = await db.query(
+    `
+      select distinct repository_full_name
+      from pull_requests
+      where organization_id = $1
+      order by repository_full_name asc
+    `,
+    [organizationId]
+  );
+
+  return {
+    repositories: reposResult.rows.map((row) => row.repository_full_name as string),
+    pullRequests: prsResult.rows
+  };
 });
 
 if (existsSync(webDistPath)) {
