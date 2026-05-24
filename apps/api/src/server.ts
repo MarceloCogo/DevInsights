@@ -37,9 +37,22 @@ const pool = hasDatabase ? new Pool({ connectionString: databaseUrl }) : null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "../../web/dist");
 
+const normalizeBaseUrl = (value: string) => {
+  const trimmed = value.trim().replace(/\/$/, "");
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+};
+
 const getWebBaseUrl = (request: { headers: Record<string, string | string[] | undefined> }) => {
   if (webBaseUrl) {
-    return webBaseUrl;
+    return normalizeBaseUrl(webBaseUrl);
   }
 
   const proto = (request.headers["x-forwarded-proto"] as string | undefined) ?? "http";
@@ -48,7 +61,7 @@ const getWebBaseUrl = (request: { headers: Record<string, string | string[] | un
     (request.headers.host as string | undefined) ??
     "localhost:3000";
 
-  return `${proto}://${hostHeader}`;
+  return normalizeBaseUrl(`${proto}://${hostHeader}`);
 };
 
 const signState = (raw: string) => createHmac("sha256", sessionSecret).update(raw).digest("hex");
