@@ -1093,6 +1093,22 @@ if (existsSync(webDistPath)) {
 
     return reply.sendFile("index.html");
   });
+} else {
+  app.get("/", async (request, reply) => {
+    const target = `${getWebBaseUrl(request)}/`;
+    return reply.redirect(target);
+  });
+
+  app.get("/app", async (request, reply) => {
+    const target = `${getWebBaseUrl(request)}/app`;
+    return reply.redirect(target);
+  });
+
+  app.get("/app/*", async (request, reply) => {
+    const suffix = request.url.replace(/^\/app/, "");
+    const target = `${getWebBaseUrl(request)}/app${suffix}`;
+    return reply.redirect(target);
+  });
 }
 
 const start = async () => {
