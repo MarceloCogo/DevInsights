@@ -32,6 +32,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const hasDatabase = Boolean(databaseUrl);
 
 const oauthStateStore = new Map<string, number>();
+const installationStateStore = new Map<string, { organizationId: number; expiresAt: number }>();
 const pool = hasDatabase ? new Pool({ connectionString: databaseUrl }) : null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "../../web/dist");
@@ -148,6 +149,7 @@ const ensureSchema = async () => {
     create table if not exists sessions (
       id text primary key,
       user_id bigint not null references users(id),
+      active_organization_id bigint references organizations(id),
       expires_at timestamptz not null,
       created_at timestamptz not null default now()
     );
@@ -195,6 +197,12 @@ const ensureSchema = async () => {
       updated_at timestamptz not null default now(),
       primary key (organization_id, repository_id)
     );
+
+    alter table sessions add column if not exists active_organization_id bigint references organizations(id);
+
+    create unique index if not exists github_installations_installation_id_idx on github_installations (installation_id);
+    create index if not exists tracked_repositories_org_selected_idx on tracked_repositories (organization_id, selected);
+    create index if not exists sync_jobs_org_created_idx on integration_sync_jobs (organization_id, created_at desc);
   `);
 };
 
@@ -305,7 +313,7 @@ const getSessionUser = async (cookieHeader: string | undefined) => {
 
   const result = await db.query(
     `
-      select u.id, u.github_id, u.github_login, u.name, u.avatar_url
+      select u.id, u.github_id, u.github_login, u.name, u.avatar_url, s.active_organization_id
       from sessions s
       join users u on u.id = s.user_id
       where s.id = $1 and s.expires_at > now()
@@ -317,11 +325,28 @@ const getSessionUser = async (cookieHeader: string | undefined) => {
     return null;
   }
 
-  return { sessionId, user: result.rows[0] };
+  return { sessionId, user: result.rows[0], activeOrganizationId: result.rows[0].active_organization_id as number | null };
 };
 
-const getOrganizationIdForUser = async (userId: number) => {
+const getOrganizationIdForUser = async (userId: number, preferredOrganizationId?: number | null) => {
   const db = getPool();
+
+  if (preferredOrganizationId) {
+    const preferred = await db.query(
+      `
+        select organization_id
+        from organization_members
+        where user_id = $1 and organization_id = $2
+        limit 1
+      `,
+      [userId, preferredOrganizationId]
+    );
+
+    if ((preferred.rowCount ?? 0) > 0) {
+      return Number(preferred.rows[0].organization_id);
+    }
+  }
+
   const orgResult = await db.query(
     `
       select organization_id
@@ -338,6 +363,40 @@ const getOrganizationIdForUser = async (userId: number) => {
   }
 
   return Number(orgResult.rows[0].organization_id);
+};
+
+const createInstallationState = (organizationId: number) => {
+  const raw = randomBytes(24).toString("hex");
+  const signature = signState(raw);
+  const state = `${raw}.${signature}`;
+  installationStateStore.set(state, {
+    organizationId,
+    expiresAt: Date.now() + 10 * 60 * 1000
+  });
+  return state;
+};
+
+const consumeInstallationState = (state: string | undefined) => {
+  if (!state) {
+    return null;
+  }
+
+  const data = installationStateStore.get(state);
+  if (!data || data.expiresAt < Date.now()) {
+    return null;
+  }
+
+  const [raw, signature] = state.split(".");
+  if (!raw || !signature) {
+    return null;
+  }
+
+  installationStateStore.delete(state);
+  if (signState(raw) !== signature) {
+    return null;
+  }
+
+  return data.organizationId;
 };
 
 const runInitialSync = async (organizationId: number) => {
@@ -526,23 +585,28 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
       [user.id]
     );
 
+    let activeOrganizationId: number;
+
     if (orgResult.rowCount === 0) {
       const organizationName = `${githubUser.login}'s Organization`;
       const createdOrg = await db.query(
         `insert into organizations (name, created_by_user_id) values ($1, $2) returning id`,
         [organizationName, user.id]
       );
+      activeOrganizationId = Number(createdOrg.rows[0].id);
       await db.query(
         `insert into organization_members (organization_id, user_id, role) values ($1, $2, 'owner')`,
-        [createdOrg.rows[0].id, user.id]
+        [activeOrganizationId, user.id]
       );
+    } else {
+      activeOrganizationId = Number(orgResult.rows[0].organization_id);
     }
 
     const sessionId = randomBytes(24).toString("hex");
-    await db.query(`insert into sessions (id, user_id, expires_at) values ($1, $2, now() + interval '7 days')`, [
-      sessionId,
-      user.id
-    ]);
+    await db.query(
+      `insert into sessions (id, user_id, active_organization_id, expires_at) values ($1, $2, $3, now() + interval '7 days')`,
+      [sessionId, user.id, activeOrganizationId]
+    );
 
     reply.header("Set-Cookie", setSessionCookie(sessionId));
     return reply.redirect(`${getWebBaseUrl(request)}/app`);
@@ -563,22 +627,88 @@ app.get(`${apiBasePath}/auth/me`, async (request, reply) => {
     return reply.code(401).send({ error: "unauthorized" });
   }
 
+  const activeOrganizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
   const orgResult = await db.query(
     `
-      select o.id, o.name
+      select o.id, o.name, om.role
       from organization_members om
       join organizations o on o.id = om.organization_id
-      where om.user_id = $1
-      order by om.created_at asc
+      where om.user_id = $1 and om.organization_id = $2
       limit 1
     `,
-    [session.user.id]
+    [session.user.id, activeOrganizationId]
   );
 
   return {
     user: session.user,
-    organization: orgResult.rows[0] ?? null
+    organization: orgResult.rows[0] ?? null,
+    activeOrganizationId
   };
+});
+
+app.get(`${apiBasePath}/organizations`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizations = await db.query(
+    `
+      select o.id, o.name, om.role
+      from organization_members om
+      join organizations o on o.id = om.organization_id
+      where om.user_id = $1
+      order by o.created_at asc
+    `,
+    [session.user.id]
+  );
+
+  const activeOrganizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+
+  return {
+    organizations: organizations.rows,
+    activeOrganizationId
+  };
+});
+
+app.post(`${apiBasePath}/organizations/active`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const body = request.body as { organizationId?: number };
+  const organizationId = Number(body.organizationId);
+  if (!organizationId) {
+    return reply.code(400).send({ error: "invalid_organization_id" });
+  }
+
+  const membership = await db.query(
+    `
+      select organization_id
+      from organization_members
+      where user_id = $1 and organization_id = $2
+      limit 1
+    `,
+    [session.user.id, organizationId]
+  );
+
+  if ((membership.rowCount ?? 0) === 0) {
+    return reply.code(403).send({ error: "organization_access_denied" });
+  }
+
+  await db.query(`update sessions set active_organization_id = $1 where id = $2`, [organizationId, session.sessionId]);
+  return { ok: true, activeOrganizationId: organizationId };
 });
 
 app.get(`${apiBasePath}/app/bootstrap`, async (request, reply) => {
@@ -592,13 +722,16 @@ app.get(`${apiBasePath}/app/bootstrap`, async (request, reply) => {
     return reply.code(401).send({ error: "unauthorized" });
   }
 
-  const organizationId = await getOrganizationIdForUser(session.user.id);
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
   if (!organizationId) {
     return {
       user: session.user,
       organization: null,
+      organizations: [],
+      activeOrganizationId: null,
       integration: { connected: false, selectedRepositories: 0 },
-      sync: null
+      sync: null,
+      repositoryInsights: { repositories: 0, open_prs: 0, merged_prs: 0 }
     };
   }
 
@@ -633,6 +766,19 @@ app.get(`${apiBasePath}/app/bootstrap`, async (request, reply) => {
   return {
     user: session.user,
     organization: orgResult.rows[0] ?? null,
+    organizations: (
+      await db.query(
+        `
+          select o.id, o.name, om.role
+          from organization_members om
+          join organizations o on o.id = om.organization_id
+          where om.user_id = $1
+          order by o.created_at asc
+        `,
+        [session.user.id]
+      )
+    ).rows,
+    activeOrganizationId: organizationId,
     integration: {
       connected: (installationResult.rowCount ?? 0) > 0,
       selectedRepositories: selectedRepositoriesResult.rows[0]?.count ?? 0
@@ -671,7 +817,13 @@ app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply)
     return reply.code(500).send({ error: "missing_github_app_name" });
   }
 
-  const installUrl = `https://github.com/apps/${githubAppName}/installations/new`;
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
+    return reply.code(400).send({ error: "missing_organization" });
+  }
+
+  const state = createInstallationState(organizationId);
+  const installUrl = `https://github.com/apps/${githubAppName}/installations/new?state=${encodeURIComponent(state)}`;
   return { installUrl };
 });
 
@@ -686,31 +838,25 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
     return reply.redirect(`${getWebBaseUrl(request)}/app/login`);
   }
 
-  const { installation_id: installationId, setup_action: setupAction } = request.query as {
+  const { installation_id: installationId, setup_action: setupAction, state } = request.query as {
     installation_id?: string;
     setup_action?: string;
+    state?: string;
   };
 
   if (!installationId) {
     return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_installation_id`);
   }
 
-  const orgResult = await db.query(
-    `
-      select organization_id
-      from organization_members
-      where user_id = $1
-      order by created_at asc
-      limit 1
-    `,
-    [session.user.id]
+  const organizationIdFromState = consumeInstallationState(state);
+  const organizationId = await getOrganizationIdForUser(
+    session.user.id,
+    organizationIdFromState ?? session.activeOrganizationId
   );
 
-  if (orgResult.rowCount === 0) {
+  if (!organizationId) {
     return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_organization`);
   }
-
-  const organizationId = orgResult.rows[0].organization_id;
   await db.query(
     `
       insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
@@ -735,23 +881,26 @@ app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply
     return reply.code(401).send({ error: "unauthorized" });
   }
 
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
+    return { connected: false, repositories: [] };
+  }
+
   const installationResult = await db.query(
     `
-      select gi.organization_id, gi.installation_id
-      from organization_members om
-      join github_installations gi on gi.organization_id = om.organization_id
-      where om.user_id = $1
-      order by om.created_at asc
+      select organization_id, installation_id
+      from github_installations
+      where organization_id = $1
       limit 1
     `,
-    [session.user.id]
+    [organizationId]
   );
 
   if (installationResult.rowCount === 0) {
     return { connected: false, repositories: [] };
   }
 
-  const { organization_id: organizationId, installation_id: installationId } = installationResult.rows[0];
+  const { installation_id: installationId } = installationResult.rows[0];
 
   try {
     const installationToken = await createInstallationToken(Number(installationId));
@@ -817,22 +966,11 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
   const body = request.body as { repositoryIds?: number[] };
   const repositoryIds = Array.isArray(body.repositoryIds) ? body.repositoryIds : [];
 
-  const orgResult = await db.query(
-    `
-      select organization_id
-      from organization_members
-      where user_id = $1
-      order by created_at asc
-      limit 1
-    `,
-    [session.user.id]
-  );
-
-  if (orgResult.rowCount === 0) {
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
     return reply.code(400).send({ error: "missing_organization" });
   }
 
-  const organizationId = orgResult.rows[0].organization_id;
   await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
 
   if (repositoryIds.length > 0) {
@@ -856,13 +994,69 @@ app.post(`${apiBasePath}/integrations/github/sync-now`, async (request, reply) =
     return reply.code(401).send({ error: "unauthorized" });
   }
 
-  const organizationId = await getOrganizationIdForUser(session.user.id);
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
   if (!organizationId) {
     return reply.code(400).send({ error: "missing_organization" });
   }
 
   const jobId = await createAndRunSyncJob(organizationId);
   return { ok: true, syncStatus: "queued", jobId };
+});
+
+app.get(`${apiBasePath}/integrations/github/status`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
+    return { connected: false, status: "disconnected" };
+  }
+
+  const installationResult = await db.query(
+    `select installation_id, account_login, account_type from github_installations where organization_id = $1 limit 1`,
+    [organizationId]
+  );
+
+  const selectedRepositoriesResult = await db.query(
+    `select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`,
+    [organizationId]
+  );
+
+  return {
+    connected: (installationResult.rowCount ?? 0) > 0,
+    status: (installationResult.rowCount ?? 0) > 0 ? "connected" : "disconnected",
+    installation: installationResult.rows[0] ?? null,
+    selectedRepositories: selectedRepositoriesResult.rows[0]?.count ?? 0
+  };
+});
+
+app.post(`${apiBasePath}/integrations/github/disconnect`, async (request, reply) => {
+  if (!ensureDatabase(reply)) {
+    return;
+  }
+
+  const db = getPool();
+  const session = await getSessionUser(request.headers.cookie);
+  if (!session) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+  if (!organizationId) {
+    return reply.code(400).send({ error: "missing_organization" });
+  }
+
+  await db.query(`delete from github_installations where organization_id = $1`, [organizationId]);
+  await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
+
+  return { ok: true, status: "disconnected" };
 });
 
 if (existsSync(webDistPath)) {

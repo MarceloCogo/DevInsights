@@ -93,7 +93,10 @@ type AppBootstrapResponse = {
   organization: {
     id: number;
     name: string;
+    role?: string;
   } | null;
+  organizations: Array<{ id: number; name: string; role: string }>;
+  activeOrganizationId: number | null;
   integration: {
     connected: boolean;
     selectedRepositories: number;
@@ -130,6 +133,7 @@ function AppDashboardPage() {
   const [data, setData] = React.useState<AppBootstrapResponse | null>(null);
   const [repositories, setRepositories] = React.useState<Repository[]>([]);
   const [savingRepos, setSavingRepos] = React.useState(false);
+  const [changingOrg, setChangingOrg] = React.useState(false);
 
   const loadBootstrap = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/app/bootstrap`, { credentials: "include" });
@@ -276,6 +280,56 @@ function AppDashboardPage() {
     }
   };
 
+  const switchOrganization = async (organizationId: number) => {
+    setChangingOrg(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/organizations/active`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to switch organization");
+      }
+
+      const bootstrap = await loadBootstrap();
+      if (bootstrap) {
+        setData(bootstrap);
+      }
+
+      const repos = await loadRepositories();
+      setRepositories(repos);
+    } catch (switchError) {
+      setError(switchError instanceof Error ? switchError.message : "Unknown error");
+    } finally {
+      setChangingOrg(false);
+    }
+  };
+
+  const disconnectIntegration = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/integrations/github/disconnect`, {
+        method: "POST",
+        credentials: "include"
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to disconnect integration");
+      }
+
+      setRepositories([]);
+      const bootstrap = await loadBootstrap();
+      if (bootstrap) {
+        setData(bootstrap);
+      }
+    } catch (disconnectError) {
+      setError(disconnectError instanceof Error ? disconnectError.message : "Unknown error");
+    }
+  };
+
   const onboardingStep = !data
     ? 0
     : !data.integration.connected
@@ -337,6 +391,31 @@ function AppDashboardPage() {
             </p>
           </article>
         </section>
+
+        {data?.organizations && data.organizations.length > 1 ? (
+          <section className="mt-4 rounded-2xl border border-line bg-panel p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-muted">
+              {isPt ? "Organização ativa" : "Active organization"}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {data.organizations.map((organization) => (
+                <button
+                  key={organization.id}
+                  type="button"
+                  disabled={changingOrg}
+                  onClick={() => switchOrganization(organization.id)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                    data.activeOrganizationId === organization.id
+                      ? "bg-accent text-ink"
+                      : "border border-line text-text hover:bg-panelSoft"
+                  }`}
+                >
+                  {organization.name}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="mt-6 rounded-2xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6">
           <h2 className="text-xl font-bold">{isPt ? "Onboarding self-service" : "Self-service onboarding"}</h2>
@@ -402,6 +481,13 @@ function AppDashboardPage() {
                   className="rounded-full border border-line px-5 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
                 >
                   {isPt ? "Sincronizar agora" : "Sync now"}
+                </button>
+                <button
+                  type="button"
+                  onClick={disconnectIntegration}
+                  className="rounded-full border border-red-400/40 px-5 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/10"
+                >
+                  {isPt ? "Desconectar integração" : "Disconnect integration"}
                 </button>
               </div>
             </div>
