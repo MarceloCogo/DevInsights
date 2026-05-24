@@ -531,6 +531,11 @@ app.options("*", async (_, reply) => {
 app.get("/health", async () => ({ status: "ok", service: "api" }));
 app.get("/ready", async () => ({ status: hasDatabase ? "ready" : "degraded", service: "api" }));
 
+app.get("/auth/github/login", async (_, reply) => reply.redirect(`${apiBasePath}/auth/github/login`));
+app.get("/auth/github/callback", async (_, reply) => reply.redirect(`${apiBasePath}/auth/github/callback`));
+app.get("/auth/me", async (_, reply) => reply.redirect(`${apiBasePath}/auth/me`));
+app.post("/auth/logout", async (_, reply) => reply.redirect(`${apiBasePath}/auth/logout`));
+
 app.get(`${apiBasePath}/auth/github/login`, async (_, reply) => {
   if (!githubClientId || !githubOAuthCallbackUrl) {
     return reply.code(500).send({ error: "missing_github_oauth_env" });

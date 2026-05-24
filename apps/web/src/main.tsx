@@ -5,6 +5,19 @@ import "./styles.css";
 
 type Locale = "pt-BR" | "en";
 
+const resolveApiBaseUrl = () => {
+  const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+  if (!raw) {
+    return "/api/v1";
+  }
+
+  if (raw.endsWith("/api/v1") || raw.includes("/api/v1?")) {
+    return raw.replace(/\/$/, "");
+  }
+
+  return `${raw.replace(/\/$/, "")}/api/v1`;
+};
+
 const detectLocale = (): Locale => {
   const saved = localStorage.getItem("devinsights.locale") as Locale | null;
   if (saved === "pt-BR" || saved === "en") {
@@ -28,7 +41,7 @@ function GitHubIcon() {
 function AppLoginPage() {
   const locale = detectLocale();
   const isPt = locale === "pt-BR";
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+  const apiBaseUrl = resolveApiBaseUrl();
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-ink px-5 py-10 text-text">
@@ -127,7 +140,7 @@ type Repository = {
 function AppDashboardPage() {
   const locale = detectLocale();
   const isPt = locale === "pt-BR";
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+  const apiBaseUrl = resolveApiBaseUrl();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [data, setData] = React.useState<AppBootstrapResponse | null>(null);
