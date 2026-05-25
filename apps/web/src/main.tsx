@@ -503,10 +503,10 @@ function AppDashboardPage() {
   const activeSectionTitle =
     section === "overview"
       ? isPt
-        ? "AI Insights"
-        : "AI Insights"
+        ? "Produtividade"
+        : "Productivity"
       : section === "pr"
-        ? "PR Intelligence"
+        ? "Metrics"
         : section === "integrations"
           ? isPt
             ? "Integrações"
@@ -516,25 +516,27 @@ function AppDashboardPage() {
             : "Settings";
 
   const selectedCount = repositories.filter((repository) => repository.selected).length;
+  const topNavItems = [
+    { key: "overview", label: isPt ? "Produtividade" : "Productivity", icon: "P" },
+    { key: "pr", label: "Metrics", icon: "M" }
+  ] as const;
+  const futureNavItems = [
+    { key: "integrations", label: isPt ? "Integrações" : "Integrations", icon: "GH" }
+  ] as const;
 
   return (
     <main className="min-h-screen bg-ink text-text">
-      <div className="mx-auto grid w-full max-w-[1460px] gap-0 md:grid-cols-[88px,1fr]">
-        <aside className="border-r border-line/50 bg-panel/90 px-3 py-5 md:min-h-screen">
+      <div className="grid w-full gap-0 md:grid-cols-[92px,1fr]">
+        <aside className="flex flex-col border-r border-line/50 bg-panel/90 px-3 py-5 md:min-h-screen">
           <a href="/" className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-panelSoft text-sm font-extrabold">
             DI
           </a>
           <nav className="space-y-2">
-            {[
-              ["overview", isPt ? "Insights" : "Insights", "AI"],
-              ["pr", "PR", "PR"],
-              ["integrations", isPt ? "Apps" : "Apps", "GH"],
-              ["settings", isPt ? "Config" : "Config", "ST"]
-            ].map(([key, label, icon]) => (
+            {topNavItems.map(({ key, label, icon }) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setSection(key as "overview" | "pr" | "integrations" | "settings")}
+                onClick={() => setSection(key)}
                 className={`flex w-full flex-col items-center gap-1 rounded-xl px-2 py-3 text-[11px] font-semibold ${
                   section === key
                     ? "bg-accent text-ink"
@@ -546,13 +548,49 @@ function AppDashboardPage() {
               </button>
             ))}
           </nav>
-          <button
-            type="button"
-            onClick={logout}
-            className="mt-8 w-full rounded-xl border border-line px-2 py-2 text-xs font-semibold text-muted hover:bg-panelSoft hover:text-text"
-          >
-            {isPt ? "Sair" : "Sign out"}
-          </button>
+
+          <div className="mt-6 border-t border-line/50 pt-4">
+            <p className="mb-2 px-1 text-[10px] uppercase tracking-[0.1em] text-muted">{isPt ? "Em breve" : "Coming soon"}</p>
+            <div className="space-y-2">
+              {futureNavItems.map(({ key, label, icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSection(key)}
+                  className={`flex w-full flex-col items-center gap-1 rounded-xl px-2 py-3 text-[11px] font-semibold ${
+                    section === key
+                      ? "bg-accent text-ink"
+                      : "border border-transparent text-muted hover:border-line hover:bg-panelSoft hover:text-text"
+                  }`}
+                >
+                  <span className="text-xs">{icon}</span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2 border-t border-line/50 pt-4 md:mt-auto">
+            <button
+              type="button"
+              onClick={() => setSection("settings")}
+              className={`flex w-full flex-col items-center gap-1 rounded-xl px-2 py-3 text-[11px] font-semibold ${
+                section === "settings"
+                  ? "bg-accent text-ink"
+                  : "border border-transparent text-muted hover:border-line hover:bg-panelSoft hover:text-text"
+              }`}
+            >
+              <span className="text-xs">⚙</span>
+              <span>{isPt ? "Config" : "Settings"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              className="w-full rounded-xl border border-line px-2 py-2 text-xs font-semibold text-muted hover:bg-panelSoft hover:text-text"
+            >
+              {isPt ? "Sair" : "Sign out"}
+            </button>
+          </div>
         </aside>
 
         <div className="bg-[linear-gradient(180deg,#101f30_0%,#0b1826_45%,#09131f_100%)]">
@@ -571,7 +609,7 @@ function AppDashboardPage() {
             </div>
           </header>
 
-          <div className="space-y-5 px-6 py-6">
+          <div className="space-y-5 px-4 py-6 md:px-6 xl:px-8">
             <section className="rounded-2xl border border-line/60 bg-panelSoft/70 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-text">
