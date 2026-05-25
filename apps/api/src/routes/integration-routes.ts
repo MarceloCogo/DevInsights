@@ -6,6 +6,8 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     apiBasePath,
     githubAppName,
     sessionCookieName,
+    sessionCookieSameSite,
+    isProduction,
     ensureDatabase,
     getPool,
     createAuthState,
@@ -31,14 +33,29 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
   app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
     const db = getPool();
-    const session = await getSessionUser(request.cookies[sessionCookieName]);
-    if (!session) return reply.redirect(`${getWebBaseUrl(request)}/app/login`);
     const { installation_id: installationId, setup_action: setupAction, state } = request.query as { installation_id?: string; setup_action?: string; state?: string };
     if (!installationId) return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_installation_id`);
+    const session = await getSessionUser(request.cookies[sessionCookieName]);
+    if (!session) {
+      reply.setCookie("devinsights.pending_installation_id", installationId, {
+        path: "/",
+        httpOnly: true,
+        sameSite: sessionCookieSameSite,
+        secure: isProduction,
+        maxAge: 60 * 10
+      });
+      return reply.redirect(`${getWebBaseUrl(request)}/app/login?next=installation`);
+    }
     const installationState = await consumeAuthState(state, "installation");
     const organizationId = await getOrganizationIdForUser(session.user.id, (installationState.ok ? installationState.organizationId : null) ?? session.activeOrganizationId);
     if (!organizationId) return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_organization`);
     await db.query(`insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id) values ($1, $2, null, null, $3) on conflict (organization_id) do update set installation_id = excluded.installation_id, installed_by_user_id = excluded.installed_by_user_id, updated_at = now()`, [organizationId, Number(installationId), session.user.id]);
+    reply.clearCookie("devinsights.pending_installation_id", {
+      path: "/",
+      httpOnly: true,
+      sameSite: sessionCookieSameSite,
+      secure: isProduction
+    });
     return reply.redirect(`${getWebBaseUrl(request)}/app?integration=${setupAction ?? "installed"}`);
   });
 

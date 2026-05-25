@@ -84,6 +84,25 @@ export const registerAuthRoutes = (app: FastifyInstance, deps: RouteDeps) => {
         secure: isProduction,
         maxAge: sessionTtlSeconds
       });
+
+      const pendingInstallationIdRaw = request.cookies["devinsights.pending_installation_id"];
+      const pendingInstallationId = Number(pendingInstallationIdRaw);
+      if (pendingInstallationIdRaw && Number.isFinite(pendingInstallationId) && pendingInstallationId > 0) {
+        await db.query(
+          `insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
+           values ($1, $2, null, null, $3)
+           on conflict (organization_id)
+           do update set installation_id = excluded.installation_id, installed_by_user_id = excluded.installed_by_user_id, updated_at = now()`,
+          [activeOrganizationId, pendingInstallationId, user.id]
+        );
+        reply.clearCookie("devinsights.pending_installation_id", {
+          path: "/",
+          httpOnly: true,
+          sameSite: sessionCookieSameSite,
+          secure: isProduction
+        });
+      }
+
       return reply.redirect(`${getWebBaseUrl(request)}/app`);
     } catch (error) {
       app.log.error(error);
