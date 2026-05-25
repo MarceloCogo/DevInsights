@@ -187,6 +187,27 @@ function AppDashboardPage() {
   const [availableRepos, setAvailableRepos] = React.useState<string[]>([]);
   const [section, setSection] = React.useState<"overview" | "pr" | "integrations" | "settings">("overview");
 
+  const formatSyncTime = (value: string | null) => {
+    if (!value) {
+      return isPt ? "Nunca" : "Never";
+    }
+
+    return new Date(value).toLocaleString(locale === "pt-BR" ? "pt-BR" : "en-US", {
+      dateStyle: "short",
+      timeStyle: "short"
+    });
+  };
+
+  const signalTag = (pr: PullRequestItem) => {
+    const text = `${pr.title} ${pr.repository_full_name}`.toLowerCase();
+    const tags: string[] = [];
+    if (text.includes("bug") || text.includes("fix")) tags.push(isPt ? "bug" : "bug");
+    if (text.includes("security") || text.includes("sec") || text.includes("auth")) tags.push("security");
+    if ((pr.additions + pr.deletions) > 800) tags.push(isPt ? "large" : "large");
+    if (tags.length === 0) tags.push(isPt ? "maintainability" : "maintainability");
+    return tags.slice(0, 3);
+  };
+
   const loadBootstrap = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/app/bootstrap`, { credentials: "include" });
     if (response.status === 401) {
@@ -479,336 +500,349 @@ function AppDashboardPage() {
           ? 3
           : 4;
 
+  const activeSectionTitle =
+    section === "overview"
+      ? isPt
+        ? "AI Insights"
+        : "AI Insights"
+      : section === "pr"
+        ? "PR Intelligence"
+        : section === "integrations"
+          ? isPt
+            ? "Integrações"
+            : "Integrations"
+          : isPt
+            ? "Configurações"
+            : "Settings";
+
+  const selectedCount = repositories.filter((repository) => repository.selected).length;
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-ink px-5 py-10 text-text">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_15%,rgba(34,184,240,0.14),transparent_32%),radial-gradient(circle_at_90%_0%,rgba(40,215,164,0.12),transparent_40%)]" />
-      <div className="relative mx-auto grid w-full max-w-7xl gap-4 md:grid-cols-[250px,1fr]">
-        <aside className="rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur md:sticky md:top-6 md:h-[calc(100vh-5rem)]">
-          <a href="/" className="mb-5 inline-flex items-center gap-2 text-base font-bold">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-panelSoft">DI</span>
-            DevInsights
+    <main className="min-h-screen bg-ink text-text">
+      <div className="mx-auto grid w-full max-w-[1460px] gap-0 md:grid-cols-[88px,1fr]">
+        <aside className="border-r border-line/50 bg-panel/90 px-3 py-5 md:min-h-screen">
+          <a href="/" className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-panelSoft text-sm font-extrabold">
+            DI
           </a>
-          <nav className="space-y-1">
+          <nav className="space-y-2">
             {[
-              ["overview", isPt ? "Overview" : "Overview"],
-              ["pr", "PR Intelligence"],
-              ["integrations", isPt ? "Integrações" : "Integrations"],
-              ["settings", isPt ? "Configurações" : "Settings"]
-            ].map(([key, label]) => (
+              ["overview", isPt ? "Insights" : "Insights", "AI"],
+              ["pr", "PR", "PR"],
+              ["integrations", isPt ? "Apps" : "Apps", "GH"],
+              ["settings", isPt ? "Config" : "Config", "ST"]
+            ].map(([key, label, icon]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setSection(key as "overview" | "pr" | "integrations" | "settings")}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${
-                  section === key ? "bg-accent text-ink" : "text-muted hover:bg-panelSoft hover:text-text"
+                className={`flex w-full flex-col items-center gap-1 rounded-xl px-2 py-3 text-[11px] font-semibold ${
+                  section === key
+                    ? "bg-accent text-ink"
+                    : "border border-transparent text-muted hover:border-line hover:bg-panelSoft hover:text-text"
                 }`}
               >
-                {label}
+                <span className="text-xs">{icon}</span>
+                <span>{label}</span>
               </button>
             ))}
           </nav>
+          <button
+            type="button"
+            onClick={logout}
+            className="mt-8 w-full rounded-xl border border-line px-2 py-2 text-xs font-semibold text-muted hover:bg-panelSoft hover:text-text"
+          >
+            {isPt ? "Sair" : "Sign out"}
+          </button>
         </aside>
 
-        <div>
-          <header className="rounded-2xl border border-line bg-panel/80 p-5 backdrop-blur md:p-6">
+        <div className="bg-[linear-gradient(180deg,#101f30_0%,#0b1826_45%,#09131f_100%)]">
+          <header className="border-b border-line/40 bg-panel/80 px-6 py-5 backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-accent">DevInsights App</p>
-                <h1 className="mt-2 text-2xl font-bold md:text-3xl">
-                  {isPt ? "Dashboard principal" : "Main dashboard"}
+                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-accent">{activeSectionTitle}</p>
+                <h1 className="mt-1 text-2xl font-bold">
+                  {isPt ? "Últimos 30 dias" : "Last 30 days"}
                 </h1>
-                <p className="mt-1 text-sm text-muted">
-                  {data?.user.name ?? data?.user.github_login} • {data?.organization?.name ?? "-"}
-                </p>
               </div>
-              <button
-                type="button"
-                onClick={logout}
-                className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
-              >
-                {isPt ? "Sair" : "Sign out"}
-              </button>
+              <div className="text-right text-sm text-muted">
+                <p>{data?.user.name ?? data?.user.github_login ?? "-"}</p>
+                <p>{data?.organization?.name ?? "-"}</p>
+              </div>
             </div>
           </header>
 
-          <section className="mt-6 grid gap-4 md:grid-cols-4">
-          <article className="rounded-2xl border border-line bg-panel p-5">
-            <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Status" : "Status"}</p>
-            <p className="mt-2 text-lg font-semibold text-text">
-              {loading ? (isPt ? "Carregando..." : "Loading...") : isPt ? "Autenticado" : "Authenticated"}
-            </p>
-          </article>
-          <article className="rounded-2xl border border-line bg-panel p-5">
-            <p className="text-xs uppercase tracking-[0.12em] text-muted">GitHub</p>
-            <p className="mt-2 text-lg font-semibold text-text">
-              {data?.user.github_login ? `@${data.user.github_login}` : "-"}
-            </p>
-          </article>
-          <article className="rounded-2xl border border-line bg-panel p-5">
-            <p className="text-xs uppercase tracking-[0.12em] text-muted">
-              {isPt ? "Organização" : "Organization"}
-            </p>
-            <p className="mt-2 text-lg font-semibold text-text">{data?.organization?.name ?? "-"}</p>
-          </article>
-          <article className="rounded-2xl border border-line bg-panel p-5">
-            <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Onboarding" : "Onboarding"}</p>
-            <p className="mt-2 text-lg font-semibold text-text">
-              {isPt ? `Etapa ${onboardingStep}/4` : `Step ${onboardingStep}/4`}
-            </p>
-          </article>
-          </section>
-
-          {data?.organizations && data.organizations.length > 1 ? (
-            <section className="mt-4 rounded-2xl border border-line bg-panel p-4">
-            <p className="text-xs uppercase tracking-[0.12em] text-muted">
-              {isPt ? "Organização ativa" : "Active organization"}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {data.organizations.map((organization) => (
-                <button
-                  key={organization.id}
-                  type="button"
-                  disabled={changingOrg}
-                  onClick={() => switchOrganization(organization.id)}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                    data.activeOrganizationId === organization.id
-                      ? "bg-accent text-ink"
-                      : "border border-line text-text hover:bg-panelSoft"
-                  }`}
-                >
-                  {organization.name}
-                </button>
-              ))}
-            </div>
+          <div className="space-y-5 px-6 py-6">
+            <section className="rounded-2xl border border-line/60 bg-panelSoft/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-text">
+                  {isPt
+                    ? `Onboarding em etapa ${onboardingStep}/4 • Sync ${data?.sync?.status ?? "idle"}`
+                    : `Onboarding step ${onboardingStep}/4 • Sync ${data?.sync?.status ?? "idle"}`}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={syncNow}
+                    className="rounded-full border border-line px-4 py-2 text-xs font-semibold hover:bg-panel"
+                  >
+                    {isPt ? "Atualizar dados" : "Refresh data"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={connectGitHubApp}
+                    className="rounded-full bg-accent px-4 py-2 text-xs font-bold text-ink hover:brightness-110"
+                  >
+                    {isPt ? "Configurar GitHub" : "Configure GitHub"}
+                  </button>
+                </div>
+              </div>
             </section>
-          ) : null}
 
-          {section === "integrations" || section === "overview" ? (
-            <section className="mt-6 rounded-2xl border border-line bg-gradient-to-br from-panel to-panelSoft p-6">
-          <h2 className="text-xl font-bold">{isPt ? "Onboarding self-service" : "Self-service onboarding"}</h2>
-          {!data?.integration.connected ? (
-            <div className="mt-4">
-              <p className="text-sm text-muted">
-                {isPt
-                  ? "Passo 1: conecte o GitHub App para começar a coletar dados dos repositórios."
-                  : "Step 1: connect GitHub App to start collecting repository data."}
-              </p>
-              <button
-                type="button"
-                onClick={connectGitHubApp}
-                className="mt-4 rounded-full bg-accent px-5 py-2 text-sm font-bold text-ink hover:brightness-110"
-              >
-                {isPt ? "Conectar GitHub App" : "Connect GitHub App"}
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 space-y-4">
-              <p className="text-sm text-muted">
-                {isPt
-                  ? "Passo 2: selecione os repositórios monitorados e inicie a sincronização inicial."
-                  : "Step 2: select monitored repositories and start initial sync."}
-              </p>
-
-              {repositories.length > 0 ? (
-                <div className="grid max-h-64 gap-2 overflow-auto rounded-xl border border-line bg-ink/20 p-3 md:grid-cols-2">
-                  {repositories.map((repo) => (
-                    <label key={repo.id} className="flex items-center gap-2 rounded-lg border border-line/60 bg-panel/70 px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={repo.selected}
-                        onChange={() => toggleRepository(repo.id)}
-                        className="h-4 w-4"
-                      />
-                      <span className="truncate">{repo.full_name}</span>
-                    </label>
+            {data?.organizations && data.organizations.length > 1 ? (
+              <section className="rounded-2xl border border-line/60 bg-panel p-4">
+                <p className="text-xs uppercase tracking-[0.12em] text-muted">{isPt ? "Organização ativa" : "Active organization"}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {data.organizations.map((organization) => (
+                    <button
+                      key={organization.id}
+                      type="button"
+                      disabled={changingOrg}
+                      onClick={() => switchOrganization(organization.id)}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                        data.activeOrganizationId === organization.id
+                          ? "bg-accent text-ink"
+                          : "border border-line text-text hover:bg-panelSoft"
+                      }`}
+                    >
+                      {organization.name}
+                    </button>
                   ))}
                 </div>
-              ) : (
-                <p className="text-sm text-muted">{isPt ? "Carregando repositórios autorizados..." : "Loading authorized repositories..."}</p>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={saveRepositoriesAndSync}
-                  disabled={savingRepos || repositories.length === 0}
-                  className="rounded-full bg-accent px-5 py-2 text-sm font-bold text-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {savingRepos
-                    ? isPt
-                      ? "Salvando..."
-                      : "Saving..."
-                    : isPt
-                      ? "Salvar e iniciar coleta"
-                      : "Save and start collection"}
-                </button>
-                <button
-                  type="button"
-                  onClick={syncNow}
-                  className="rounded-full border border-line px-5 py-2 text-sm font-semibold text-text hover:bg-panelSoft"
-                >
-                  {isPt ? "Sincronizar agora" : "Sync now"}
-                </button>
-                <button
-                  type="button"
-                  onClick={disconnectIntegration}
-                  className="rounded-full border border-red-400/40 px-5 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/10"
-                >
-                  {isPt ? "Desconectar integração" : "Disconnect integration"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {data?.sync ? (
-            <div className="mt-6 rounded-xl border border-line/70 bg-ink/20 p-4 text-sm text-muted">
-              <p>
-                {isPt ? "Status do sync:" : "Sync status:"} <strong className="text-text">{data.sync.status}</strong>
-              </p>
-              <p>
-                {isPt ? "Repositórios processados:" : "Processed repositories:"} {data.sync.processed_repositories}
-              </p>
-              <p>
-                {isPt ? "PRs coletados:" : "Collected PRs:"} {data.sync.total_prs}
-              </p>
-              {data.sync.error_message ? <p className="text-red-300">{data.sync.error_message}</p> : null}
-            </div>
-          ) : null}
-
-          {data?.repositoryInsights ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
-                <p className="text-xs text-muted">{isPt ? "Repos monitorados" : "Monitored repos"}</p>
-                <p className="mt-1 font-semibold text-text">{overview?.selectedRepositories ?? data.repositoryInsights.repositories}</p>
-              </article>
-              <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
-                <p className="text-xs text-muted">{isPt ? "PRs abertos" : "Open PRs"}</p>
-                <p className="mt-1 font-semibold text-text">{overview?.openPrs ?? data.repositoryInsights.open_prs}</p>
-              </article>
-              <article className="rounded-xl border border-line/70 bg-ink/20 p-3 text-sm">
-                <p className="text-xs text-muted">{isPt ? "PRs merged" : "Merged PRs"}</p>
-                <p className="mt-1 font-semibold text-text">{overview?.throughput30d ?? data.repositoryInsights.merged_prs}</p>
-              </article>
-            </div>
-          ) : null}
-
-          {error ? <p className="mt-4 text-sm text-red-300">{error}</p> : null}
-            </section>
-          ) : null}
-
-          {section === "pr" || section === "overview" ? (
-            <section className="mt-6 rounded-2xl border border-line bg-panel p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-bold">{isPt ? "PR Intelligence" : "PR Intelligence"}</h2>
-            <div className="flex flex-wrap gap-2">
-              <select
-                value={periodFilter}
-                onChange={(event) => setPeriodFilter(event.target.value as "7d" | "30d")}
-                className="rounded-lg border border-line bg-ink/30 px-3 py-2 text-sm"
-              >
-                <option value="7d">{isPt ? "Últimos 7 dias" : "Last 7 days"}</option>
-                <option value="30d">{isPt ? "Últimos 30 dias" : "Last 30 days"}</option>
-              </select>
-              <select
-                value={stateFilter}
-                onChange={(event) => setStateFilter(event.target.value)}
-                className="rounded-lg border border-line bg-ink/30 px-3 py-2 text-sm"
-              >
-                <option value="all">{isPt ? "Todos estados" : "All states"}</option>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </select>
-              <select
-                value={repoFilter}
-                onChange={(event) => setRepoFilter(event.target.value)}
-                className="rounded-lg border border-line bg-ink/30 px-3 py-2 text-sm"
-              >
-                <option value="all">{isPt ? "Todos repositórios" : "All repositories"}</option>
-                {availableRepos.map((repo) => (
-                  <option key={repo} value={repo}>
-                    {repo}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
-              <p className="text-xs text-muted">Throughput 7d</p>
-              <p className="mt-1 text-lg font-semibold">{overview?.throughput7d ?? 0}</p>
-            </article>
-            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
-              <p className="text-xs text-muted">Throughput 30d</p>
-              <p className="mt-1 text-lg font-semibold">{overview?.throughput30d ?? 0}</p>
-            </article>
-            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
-              <p className="text-xs text-muted">{isPt ? "Tamanho médio PR" : "Average PR size"}</p>
-              <p className="mt-1 text-lg font-semibold">{overview?.avgPrSize ?? 0}</p>
-            </article>
-            <article className="rounded-xl border border-line/70 bg-ink/20 p-4">
-              <p className="text-xs text-muted">Stale PRs</p>
-              <p className="mt-1 text-lg font-semibold">{overview?.stalePrs ?? 0}</p>
-            </article>
-          </div>
-
-          <div className="mt-4 overflow-x-auto rounded-xl border border-line/70">
-            <table className="min-w-full border-collapse text-left text-sm">
-              <thead className="bg-ink/30 text-muted">
-                <tr>
-                  <th className="px-3 py-2">PR</th>
-                  <th className="px-3 py-2">Repo</th>
-                  <th className="px-3 py-2">Author</th>
-                  <th className="px-3 py-2">State</th>
-                  <th className="px-3 py-2">Size</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pullRequests.map((pr) => (
-                  <tr key={pr.github_pr_id} className="border-t border-line/50">
-                    <td className="px-3 py-2">
-                      {pr.html_url ? (
-                        <a href={pr.html_url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
-                          #{pr.number} {pr.title}
-                        </a>
-                      ) : (
-                        <>#{pr.number} {pr.title}</>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-muted">{pr.repository_full_name}</td>
-                    <td className="px-3 py-2 text-muted">{pr.author_login ?? "-"}</td>
-                    <td className="px-3 py-2 text-muted">{pr.state}</td>
-                    <td className="px-3 py-2 text-muted">{pr.additions + pr.deletions}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {pullRequests.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-muted">{isPt ? "Nenhum PR encontrado para os filtros atuais." : "No pull requests found for current filters."}</p>
+              </section>
             ) : null}
-          </div>
-            </section>
-          ) : null}
 
-          {section === "settings" ? (
-            <section className="mt-6 rounded-2xl border border-line bg-panel p-6">
-              <h2 className="text-xl font-bold">{isPt ? "Configurações" : "Settings"}</h2>
-              <p className="mt-2 text-sm text-muted">
-                {isPt
-                  ? "Nesta fase, as configurações principais são troca de organização ativa e gerenciamento da integração GitHub."
-                  : "At this stage, main settings are active organization switching and GitHub integration management."}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={disconnectIntegration}
-                  className="rounded-full border border-red-400/40 px-5 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/10"
-                >
-                  {isPt ? "Desconectar integração" : "Disconnect integration"}
-                </button>
-              </div>
-            </section>
-          ) : null}
+            {(section === "overview" || section === "pr") && (
+              <section className="rounded-2xl border border-line/60 bg-panel p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold">PR Intelligence</h2>
+                    <p className="text-sm text-muted">
+                      {isPt ? "Leitura de fluxo com foco em velocidade e qualidade." : "Flow intelligence focused on speed and quality."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      value={periodFilter}
+                      onChange={(event) => setPeriodFilter(event.target.value as "7d" | "30d")}
+                      className="rounded-full border border-line bg-panelSoft px-4 py-2 text-xs"
+                    >
+                      <option value="7d">{isPt ? "7 dias" : "7 days"}</option>
+                      <option value="30d">{isPt ? "30 dias" : "30 days"}</option>
+                    </select>
+                    <select
+                      value={stateFilter}
+                      onChange={(event) => setStateFilter(event.target.value)}
+                      className="rounded-full border border-line bg-panelSoft px-4 py-2 text-xs"
+                    >
+                      <option value="all">{isPt ? "Todos estados" : "All states"}</option>
+                      <option value="open">Open</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                    <select
+                      value={repoFilter}
+                      onChange={(event) => setRepoFilter(event.target.value)}
+                      className="rounded-full border border-line bg-panelSoft px-4 py-2 text-xs"
+                    >
+                      <option value="all">{isPt ? "Todos repositórios" : "All repositories"}</option>
+                      {availableRepos.map((repo) => (
+                        <option key={repo} value={repo}>
+                          {repo}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">Throughput 7d</p>
+                    <p className="mt-2 text-xl font-bold">{overview?.throughput7d ?? 0}</p>
+                  </article>
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">Throughput 30d</p>
+                    <p className="mt-2 text-xl font-bold">{overview?.throughput30d ?? 0}</p>
+                  </article>
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">{isPt ? "Tamanho médio" : "Average PR size"}</p>
+                    <p className="mt-2 text-xl font-bold">{overview?.avgPrSize ?? 0}</p>
+                  </article>
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">Stale PRs</p>
+                    <p className="mt-2 text-xl font-bold">{overview?.stalePrs ?? 0}</p>
+                  </article>
+                </div>
+
+                <div className="mt-4 overflow-x-auto rounded-xl border border-line/60 bg-panelSoft/30">
+                  <table className="min-w-full border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-line/60 text-xs uppercase tracking-[0.08em] text-muted">
+                        <th className="px-3 py-3">{isPt ? "Time" : "Time"}</th>
+                        <th className="px-3 py-3">{isPt ? "Signals" : "Signals"}</th>
+                        <th className="px-3 py-3">PR</th>
+                        <th className="px-3 py-3">Repository</th>
+                        <th className="px-3 py-3">{isPt ? "Ação" : "Action"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pullRequests.map((pr) => (
+                        <tr key={pr.github_pr_id} className="border-b border-line/40 text-sm last:border-b-0">
+                          <td className="px-3 py-3 text-muted">{formatSyncTime(pr.updated_at ?? pr.opened_at)}</td>
+                          <td className="px-3 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {signalTag(pr).map((tag) => (
+                                <span key={`${pr.github_pr_id}-${tag}`} className="rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] text-muted">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 font-medium">#{pr.number} {pr.title}</td>
+                          <td className="px-3 py-3 text-muted">{pr.repository_full_name}</td>
+                          <td className="px-3 py-3">
+                            {pr.html_url ? (
+                              <a href={pr.html_url} target="_blank" rel="noreferrer" className="inline-flex rounded-full border border-line px-3 py-1 text-xs hover:bg-panel">
+                                {isPt ? "Abrir" : "Open"}
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {pullRequests.length === 0 ? (
+                    <p className="px-3 py-6 text-sm text-muted">
+                      {isPt ? "Nenhum PR encontrado para os filtros atuais." : "No pull requests found for current filters."}
+                    </p>
+                  ) : null}
+                </div>
+              </section>
+            )}
+
+            {(section === "overview" || section === "integrations") && (
+              <section className="rounded-2xl border border-line/60 bg-panel p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold">{isPt ? "Integração GitHub" : "GitHub Integration"}</h2>
+                    <p className="text-sm text-muted">
+                      {isPt
+                        ? "Conecte, selecione repositórios e acompanhe a coleta inicial."
+                        : "Connect, select repositories, and monitor initial ingestion."}
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-line bg-panelSoft px-3 py-1 text-xs text-muted">
+                    {isPt ? "Atualizado" : "Updated"}: {formatSyncTime(data?.sync?.finished_at ?? data?.sync?.started_at ?? null)}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">{isPt ? "Conectado" : "Connected"}</p>
+                    <p className="mt-2 text-lg font-bold">{data?.integration.connected ? "Yes" : "No"}</p>
+                  </article>
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">{isPt ? "Repos selecionados" : "Selected repos"}</p>
+                    <p className="mt-2 text-lg font-bold">{selectedCount}</p>
+                  </article>
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/70 p-4">
+                    <p className="text-xs text-muted">{isPt ? "PRs coletados" : "Collected PRs"}</p>
+                    <p className="mt-2 text-lg font-bold">{data?.sync?.total_prs ?? 0}</p>
+                  </article>
+                </div>
+
+                {!data?.integration.connected ? (
+                  <div className="mt-4 rounded-xl border border-dashed border-line p-4 text-sm text-muted">
+                    <p>{isPt ? "Conecte o GitHub App para iniciar." : "Connect GitHub App to get started."}</p>
+                    <button
+                      type="button"
+                      onClick={connectGitHubApp}
+                      className="mt-3 rounded-full bg-accent px-4 py-2 text-xs font-bold text-ink"
+                    >
+                      {isPt ? "Conectar GitHub App" : "Connect GitHub App"}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-4 grid max-h-64 gap-2 overflow-auto rounded-xl border border-line/60 bg-panelSoft/40 p-3 md:grid-cols-2">
+                      {repositories.map((repo) => (
+                        <label key={repo.id} className="flex items-center gap-2 rounded-lg border border-line/50 bg-panel px-3 py-2 text-sm">
+                          <input type="checkbox" checked={repo.selected} onChange={() => toggleRepository(repo.id)} className="h-4 w-4" />
+                          <span className="truncate">{repo.full_name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={saveRepositoriesAndSync}
+                        disabled={savingRepos || repositories.length === 0}
+                        className="rounded-full bg-accent px-5 py-2 text-sm font-bold text-ink disabled:opacity-50"
+                      >
+                        {savingRepos ? (isPt ? "Salvando..." : "Saving...") : isPt ? "Salvar e sincronizar" : "Save and sync"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={syncNow}
+                        className="rounded-full border border-line px-5 py-2 text-sm font-semibold hover:bg-panelSoft"
+                      >
+                        {isPt ? "Sincronizar agora" : "Sync now"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={disconnectIntegration}
+                        className="rounded-full border border-red-400/40 px-5 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/10"
+                      >
+                        {isPt ? "Desconectar" : "Disconnect"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+
+            {section === "settings" && (
+              <section className="rounded-2xl border border-line/60 bg-panel p-5">
+                <h2 className="text-xl font-bold">{isPt ? "Configurações" : "Settings"}</h2>
+                <p className="mt-1 text-sm text-muted">
+                  {isPt
+                    ? "Gerencie integrações, organização ativa e políticas operacionais do workspace."
+                    : "Manage integrations, active organization, and workspace operational policies."}
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/60 p-4">
+                    <p className="text-xs uppercase tracking-[0.08em] text-muted">{isPt ? "Sessão" : "Session"}</p>
+                    <p className="mt-2 text-sm text-text">{isPt ? "Autenticado via GitHub OAuth" : "Authenticated via GitHub OAuth"}</p>
+                  </article>
+                  <article className="rounded-xl border border-line/60 bg-panelSoft/60 p-4">
+                    <p className="text-xs uppercase tracking-[0.08em] text-muted">{isPt ? "Integração" : "Integration"}</p>
+                    <p className="mt-2 text-sm text-text">{data?.integration.connected ? "GitHub App connected" : "GitHub App disconnected"}</p>
+                  </article>
+                </div>
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={disconnectIntegration}
+                    className="rounded-full border border-red-400/40 px-5 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/10"
+                  >
+                    {isPt ? "Desconectar integração" : "Disconnect integration"}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {error ? <p className="text-sm text-red-300">{error}</p> : null}
+          </div>
         </div>
       </div>
     </main>
