@@ -44,25 +44,13 @@ function AppLoginPage() {
   const apiBaseUrl = resolveApiBaseUrl();
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-ink px-5 py-10 text-text">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-ink px-5 py-10 text-text">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(34,184,240,0.16),transparent_35%),radial-gradient(circle_at_90%_0%,rgba(40,215,164,0.14),transparent_42%)]" />
-      <div className="relative mx-auto grid w-full max-w-5xl gap-8 md:grid-cols-[1.1fr,1fr] md:items-center">
-        <section>
+      <section className="relative w-full max-w-md rounded-2xl border border-line bg-panel p-7 shadow-glow md:p-8">
           <a href="/" className="inline-flex items-center gap-2 text-lg font-bold tracking-wide text-text">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-panelSoft">DI</span>
             DevInsights
           </a>
-          <h1 className="mt-6 text-4xl font-extrabold leading-tight md:text-5xl">
-            {isPt ? "Bem-vindo de volta" : "Welcome back"}
-          </h1>
-          <p className="mt-4 max-w-md text-sm leading-7 text-muted md:text-base">
-            {isPt
-              ? "Acesse sua área para acompanhar Engineering Intelligence com foco em fluxo, colaboração e melhoria contínua."
-              : "Access your workspace to track Engineering Intelligence focused on flow, collaboration, and continuous improvement."}
-          </p>
-        </section>
-
-        <section className="rounded-2xl border border-line bg-panel p-7 shadow-glow md:p-8">
           <p className="text-xs uppercase tracking-[0.16em] text-accent">{isPt ? "Acesso seguro" : "Secure access"}</p>
           <h2 className="mt-3 text-2xl font-bold">{isPt ? "Entrar com sua conta GitHub" : "Sign in with your GitHub account"}</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
@@ -89,8 +77,7 @@ function AppLoginPage() {
           <a href="/" className="mt-5 inline-block text-sm text-muted underline decoration-line underline-offset-4 hover:text-text">
             {isPt ? "Voltar para a landing" : "Back to landing"}
           </a>
-        </section>
-      </div>
+      </section>
     </main>
   );
 }
@@ -186,7 +173,7 @@ function AppDashboardPage() {
   const [periodFilter, setPeriodFilter] = React.useState<"7d" | "30d">("30d");
   const [availableRepos, setAvailableRepos] = React.useState<string[]>([]);
   const [section, setSection] = React.useState<
-    "dashboard" | "productivity" | "metrics" | "repositories" | "teams" | "integrations" | "automation" | "settings"
+    "dashboard" | "productivity" | "metrics" | "repositories" | "teams" | "integrations" | "settings"
   >("productivity");
   const [avatarMenuOpen, setAvatarMenuOpen] = React.useState(false);
   const [demoMode, setDemoMode] = React.useState(false);
@@ -511,7 +498,6 @@ function AppDashboardPage() {
     repositories: "Repositories",
     teams: "Teams",
     integrations: "Integrations",
-    automation: "Automation",
     settings: "Settings"
   } as const;
   const activeSectionTitle = activeSectionTitleMap[section];
@@ -523,8 +509,7 @@ function AppDashboardPage() {
     { key: "metrics", label: "Metrics", icon: "◫" },
     { key: "repositories", label: "Repositories", icon: "▤" },
     { key: "teams", label: "Teams", icon: "◎" },
-    { key: "integrations", label: "Integrations", icon: "◌" },
-    { key: "automation", label: "Automation", icon: "⚙" }
+    { key: "integrations", label: "Integrations", icon: "◌" }
   ] as const;
   const hasIntegrationData = Boolean(data?.integration.connected);
   const hasPullRequestData = pullRequests.length > 0;
@@ -632,7 +617,7 @@ function AppDashboardPage() {
               <div className="flex items-center gap-2 md:gap-3">
                 <button className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Configure</button>
                 <button className="hidden rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 md:inline-flex">
-                  {data?.integration.connected ? "Talk to support" : "Contact sales"}
+                  Talk to support
                 </button>
                 <button className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-300 hover:bg-slate-800">🔔</button>
 
@@ -670,13 +655,12 @@ function AppDashboardPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-300">
                   {isPt
-                    ? "Seu período de avaliação expira em 45 dias. Durante o trial você tem acesso aos principais recursos do DevInsights."
-                    : "Your trial expires in 45 days. During the trial you have access to key DevInsights features."}
+                    ? `Onboarding: etapa ${onboardingStep}/4. Conecte o GitHub para gerar seus primeiros insights reais.`
+                    : `Onboarding: step ${onboardingStep}/4. Connect GitHub to generate your first real insights.`}
                 </p>
                 <div className="flex gap-2">
-                  <button className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Contact sales</button>
-                  <button className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Talk to support</button>
-                  <button className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-300">Upgrade plan</button>
+                  <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
+                  <button onClick={syncNow} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Run initial sync</button>
                 </div>
               </div>
             </section>
@@ -802,7 +786,7 @@ function AppDashboardPage() {
               </div>
             </section>
 
-            {(section === "settings" || section === "repositories" || section === "teams" || section === "automation" || section === "metrics" || section === "dashboard" || section === "integrations") && (
+            {(section === "settings" || section === "repositories" || section === "teams" || section === "metrics" || section === "dashboard" || section === "integrations") && (
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
                 <h3 className="text-lg font-semibold text-white">{activeSectionTitle}</h3>
                 <p className="mt-2 text-sm text-slate-400">{isPt ? "Seção em evolução. Vamos detalhar esse módulo nas próximas iterações." : "This section is evolving. We will expand this module in the next iterations."}</p>

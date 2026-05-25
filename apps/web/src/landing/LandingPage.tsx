@@ -4,15 +4,14 @@ type Locale = "pt-BR" | "en";
 
 const copy = {
   "pt-BR": {
-    nav: ["Produto", "Problema", "Métricas", "Open Source"],
+    nav: ["Produto", "Problema", "Métricas", "Público"],
     enter: "Entrar",
     eyebrow: "Engineering Intelligence Platform",
     title: "Visibilidade executiva para engenharia de software",
     subtitle:
       "DevInsights transforma dados do GitHub e Azure DevOps em indicadores sobre fluxo, gargalos, produtividade e saúde da engenharia.",
-    support: "Open source para começar. SaaS para escalar.",
-    ctaPrimary: "Começar com Open Source",
-    ctaSecondary: "Ver demonstração",
+    support: "Conecte seu GitHub e veja os primeiros sinais do seu fluxo.",
+    ctaPrimary: "Começar com GitHub",
     problemTitle: "A engenharia gera muitos dados, mas poucos viram decisão",
     problemPoints: [
       "PRs parados sem visibilidade no momento certo",
@@ -46,23 +45,19 @@ const copy = {
       ["Tech Lead", "Fluxo de PRs, review load e bloqueios técnicos."],
       ["Produto/Ops", "Planejamento com capacidade real de entrega."]
     ],
-    openTitle: "Open source para começar. SaaS para escalar.",
-    openText:
-      "A edição open source reduz atrito para validar valor com dados reais. Conforme o uso cresce, o SaaS é a evolução natural para governança, múltiplos times, automações, relatórios executivos, SSO e suporte.",
     finalTitle: "Comece medindo o fluxo real da sua engenharia",
-    finalText: "Valide com a edição open source. Escale com o DevInsights SaaS.",
+    finalText: "Comece com GitHub e acompanhe os primeiros insights de produtividade.",
     finalCta: "Entrar na lista de espera"
   },
   en: {
-    nav: ["Product", "Problem", "Metrics", "Open Source"],
+    nav: ["Product", "Problem", "Metrics", "Audience"],
     enter: "Sign in",
     eyebrow: "Engineering Intelligence Platform",
     title: "Executive visibility for software engineering",
     subtitle:
       "DevInsights turns GitHub and Azure DevOps data into indicators for flow, bottlenecks, productivity, and engineering health.",
-    support: "Open source to start. SaaS to scale.",
-    ctaPrimary: "Start with Open Source",
-    ctaSecondary: "Watch demo",
+    support: "Connect your GitHub and see the first signals from your flow.",
+    ctaPrimary: "Start with GitHub",
     problemTitle: "Engineering generates a lot of data, but little becomes decisions",
     problemPoints: [
       "Stuck PRs without timely visibility",
@@ -96,11 +91,8 @@ const copy = {
       ["Tech Lead", "PR flow, review load, and technical blockers."],
       ["Product/Ops", "Planning with real delivery capacity."]
     ],
-    openTitle: "Open source to start. SaaS to scale.",
-    openText:
-      "The open-source edition lowers adoption friction and validates value with real data. As usage grows, SaaS becomes the natural path for governance, multi-team operations, automation, executive reporting, SSO, and support.",
     finalTitle: "Start measuring your real engineering flow",
-    finalText: "Validate with open source. Scale with DevInsights SaaS.",
+    finalText: "Start with GitHub and review your first productivity insights.",
     finalCta: "Join waitlist"
   }
 } as const;
@@ -141,7 +133,7 @@ export function LandingPage() {
               <li><a href="#produto" className="hover:text-text">{t.nav[0]}</a></li>
               <li><a href="#problema" className="hover:text-text">{t.nav[1]}</a></li>
               <li><a href="#metricas" className="hover:text-text">{t.nav[2]}</a></li>
-              <li><a href="#opensource" className="hover:text-text">{t.nav[3]}</a></li>
+              <li><a href="#publico" className="hover:text-text">{t.nav[3]}</a></li>
             </ul>
             <div className="flex items-center gap-2">
               <div className="rounded-full border border-line p-1 text-xs">
@@ -160,7 +152,6 @@ export function LandingPage() {
           <p className="mt-6 inline-flex rounded-full border border-accent/50 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent">{t.support}</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href="/app/login" className="rounded-full bg-accent px-6 py-3 text-sm font-bold text-ink hover:brightness-110">{t.ctaPrimary}</a>
-            <a href="#solucao" className="rounded-full border border-line px-6 py-3 text-sm font-bold text-text hover:bg-panelSoft">{t.ctaSecondary}</a>
           </div>
         </section>
 
@@ -204,11 +195,6 @@ export function LandingPage() {
               </article>
             ))}
           </div>
-        </section>
-
-        <section id="opensource" className="mt-20 rounded-2xl border border-line bg-panel p-7 md:p-8">
-          <h2 className="text-2xl font-bold md:text-3xl">{t.openTitle}</h2>
-          <p className="mt-4 text-sm leading-7 text-muted md:text-base">{t.openText}</p>
         </section>
 
         <section className="mt-20 rounded-2xl border border-line bg-panel p-7 text-center">
