@@ -94,13 +94,15 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
     const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
     const reposResult = await db.query(`select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`, [organizationId]);
     const syncResult = await db.query(`select status from integration_sync_jobs where organization_id = $1 order by created_at desc limit 1`, [organizationId]);
+    const productionEnvResult = await db.query(`select count(*)::int as count from production_environments where organization_id = $1`, [organizationId]);
 
     const githubConnected = (installationResult.rowCount ?? 0) > 0;
     const repositoriesSelected = (reposResult.rows[0]?.count ?? 0) > 0;
     const syncStatus = (syncResult.rows[0]?.status as string | undefined) ?? null;
     const syncStarted = Boolean(syncStatus);
     const syncCompleted = syncStatus === "completed";
-    const step = !githubConnected ? 1 : !repositoriesSelected ? 2 : !syncCompleted ? 3 : 4;
+    const productionConfigured = (productionEnvResult.rows[0]?.count ?? 0) > 0;
+    const step = !githubConnected ? 1 : !repositoriesSelected ? 2 : !syncCompleted ? 3 : !productionConfigured ? 4 : 5;
 
     return {
       organizationId,
@@ -109,7 +111,8 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
       repositoriesSelected,
       syncStarted,
       syncCompleted,
-      syncStatus
+      syncStatus,
+      productionConfigured
     };
   });
 };

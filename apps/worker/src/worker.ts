@@ -32,6 +32,128 @@ const createInstallationClient = async (installationId: number) => {
   return octokit as unknown as Octokit;
 };
 
+const syncWorkflowRuns = async (
+  octokit: Octokit,
+  organizationId: number,
+  repositoryFullName: string
+) => {
+  const [owner, repo] = repositoryFullName.split("/");
+  if (!owner || !repo) return;
+
+  const runs = await octokit.paginate(octokit.actions.listWorkflowRunsForRepo, {
+    owner,
+    repo,
+    per_page: 50
+  });
+
+  for (const run of runs as Array<{
+    id: number;
+    name?: string;
+    status?: string;
+    conclusion?: string | null;
+    head_branch?: string | null;
+    head_sha?: string | null;
+    run_started_at?: string;
+    updated_at?: string;
+  }>) {
+    await pool.query(
+      `
+        insert into workflow_runs (
+          organization_id, repository_full_name, github_workflow_run_id, workflow_name,
+          status, conclusion, branch, commit_sha, started_at, finished_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+        on conflict (organization_id, github_workflow_run_id)
+        do update set
+          workflow_name = excluded.workflow_name,
+          status = excluded.status,
+          conclusion = excluded.conclusion,
+          branch = excluded.branch,
+          commit_sha = excluded.commit_sha,
+          started_at = excluded.started_at,
+          finished_at = excluded.finished_at,
+          updated_at = now()
+      `,
+      [
+        organizationId,
+        repositoryFullName,
+        run.id,
+        run.name ?? null,
+        run.status ?? null,
+        run.conclusion ?? null,
+        run.head_branch ?? null,
+        run.head_sha ?? null,
+        run.run_started_at ?? null,
+        run.updated_at ?? null
+      ]
+    );
+  }
+};
+
+const syncDeployments = async (
+  octokit: Octokit,
+  organizationId: number,
+  repositoryFullName: string
+) => {
+  const [owner, repo] = repositoryFullName.split("/");
+  if (!owner || !repo) return;
+
+  const deploymentResponse = await octokit.repos.listDeployments({
+    owner,
+    repo,
+    per_page: 30
+  });
+
+  for (const deployment of deploymentResponse.data as Array<{
+    id: number;
+    environment?: string;
+    created_at?: string;
+  }>) {
+    let state: string | null = null;
+    let deployedAt = deployment.created_at ?? null;
+
+    try {
+      const statuses = await octokit.repos.listDeploymentStatuses({
+        owner,
+        repo,
+        deployment_id: deployment.id,
+        per_page: 1
+      });
+      const latestStatus = statuses.data[0];
+      if (latestStatus) {
+        state = latestStatus.state ?? null;
+        deployedAt = latestStatus.updated_at ?? latestStatus.created_at ?? deployedAt;
+      }
+    } catch {
+      // keep deployment defaults when statuses are unavailable
+    }
+
+    await pool.query(
+      `
+        insert into deployments (
+          organization_id, repository_full_name, github_deployment_id, environment_name, state, deployed_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, now())
+        on conflict (organization_id, github_deployment_id)
+        do update set
+          repository_full_name = excluded.repository_full_name,
+          environment_name = excluded.environment_name,
+          state = excluded.state,
+          deployed_at = excluded.deployed_at,
+          updated_at = now()
+      `,
+      [
+        organizationId,
+        repositoryFullName,
+        deployment.id,
+        deployment.environment ?? "production",
+        state,
+        deployedAt
+      ]
+    );
+  }
+};
+
 const runInitialSync = async (organizationId: number, jobId: number) => {
   const installationResult = await pool.query(
     `select installation_id from github_installations where organization_id = $1 limit 1`,
@@ -159,6 +281,38 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
       `,
       [organizationId, repository.repository_id, repository.full_name, openPrs, mergedPrs]
     );
+  }
+
+  await pool.query(
+    `update integration_sync_jobs set phase = 'syncing_workflows', processed_repositories = 0, updated_at = now() where id = $1`,
+    [jobId]
+  );
+
+  let processedWorkflows = 0;
+  for (const repository of repositories) {
+    try {
+      await syncWorkflowRuns(octokit, organizationId, repository.full_name);
+    } catch (error) {
+      console.error("workflow run sync failed", { organizationId, repository: repository.full_name, error });
+    }
+    processedWorkflows += 1;
+    await pool.query(`update integration_sync_jobs set processed_repositories = $1, updated_at = now() where id = $2`, [processedWorkflows, jobId]);
+  }
+
+  await pool.query(
+    `update integration_sync_jobs set phase = 'syncing_deployments', processed_repositories = 0, updated_at = now() where id = $1`,
+    [jobId]
+  );
+
+  let processedDeployments = 0;
+  for (const repository of repositories) {
+    try {
+      await syncDeployments(octokit, organizationId, repository.full_name);
+    } catch (error) {
+      console.error("deployment sync failed", { organizationId, repository: repository.full_name, error });
+    }
+    processedDeployments += 1;
+    await pool.query(`update integration_sync_jobs set processed_repositories = $1, updated_at = now() where id = $2`, [processedDeployments, jobId]);
   }
 
   return {

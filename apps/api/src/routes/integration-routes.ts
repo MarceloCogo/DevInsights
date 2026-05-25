@@ -152,4 +152,38 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
       errorMessage: row.error_message ?? null
     };
   });
+
+  app.get(`${apiBasePath}/integrations/github/logs`, async (request, reply) => {
+    if (!ensureDatabase(reply)) return;
+    const db = getPool();
+    const session = await getSessionUser(request.cookies[sessionCookieName]);
+    if (!session) return reply.code(401).send({ error: "unauthorized" });
+    const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+    if (!organizationId) return { logs: [] };
+
+    const result = await db.query(
+      `
+        select status, phase, total_repositories, processed_repositories, total_prs, error_message, started_at, finished_at, created_at
+        from integration_sync_jobs
+        where organization_id = $1
+        order by created_at desc
+        limit 20
+      `,
+      [organizationId]
+    );
+
+    return {
+      logs: result.rows.map((row) => ({
+        status: row.status,
+        phase: row.phase,
+        totalRepositories: row.total_repositories ?? 0,
+        processedRepositories: row.processed_repositories ?? 0,
+        totalPrs: row.total_prs ?? 0,
+        errorMessage: row.error_message ?? null,
+        startedAt: row.started_at ?? null,
+        finishedAt: row.finished_at ?? null,
+        createdAt: row.created_at ?? null
+      }))
+    };
+  });
 };

@@ -164,6 +164,19 @@ type OnboardingStatus = {
   syncStarted: boolean;
   syncCompleted: boolean;
   syncStatus?: string | null;
+  productionConfigured?: boolean;
+};
+
+type IntegrationLogItem = {
+  status: string;
+  phase: string;
+  totalRepositories: number;
+  processedRepositories: number;
+  totalPrs: number;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt?: string | null;
 };
 
 type SyncProgress = {
@@ -219,6 +232,8 @@ function AppDashboardPage() {
   const [dora, setDora] = React.useState<DoraOverview | null>(null);
   const [productionEnvironmentsInput, setProductionEnvironmentsInput] = React.useState("production");
   const [savingProductionEnvs, setSavingProductionEnvs] = React.useState(false);
+  const [integrationLogs, setIntegrationLogs] = React.useState<IntegrationLogItem[]>([]);
+  const [showIntegrationLogs, setShowIntegrationLogs] = React.useState(false);
 
   const formatSyncTime = (value: string | null) => {
     if (!value) {
@@ -317,6 +332,15 @@ function AppDashboardPage() {
       throw new Error("Failed to load DORA overview");
     }
     return (await response.json()) as DoraOverview;
+  }, [apiBaseUrl]);
+
+  const loadIntegrationLogs = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/integrations/github/logs`, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("Failed to load integration logs");
+    }
+    const payload = (await response.json()) as { logs: IntegrationLogItem[] };
+    return payload.logs;
   }, [apiBaseUrl]);
 
   React.useEffect(() => {
@@ -760,8 +784,8 @@ function AppDashboardPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-300">
                   {isPt
-                    ? `Onboarding: etapa ${onboardingStep}/4. Conecte o GitHub para gerar seus primeiros insights reais.`
-                    : `Onboarding: step ${onboardingStep}/4. Connect GitHub to generate your first real insights.`}
+                    ? `Onboarding: etapa ${onboardingStep}/5. Conecte e configure para gerar suas primeiras métricas reais.`
+                    : `Onboarding: step ${onboardingStep}/5. Connect and configure to generate your first real metrics.`}
                 </p>
                 <div className="flex gap-2">
                   <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
@@ -822,7 +846,8 @@ function AppDashboardPage() {
                   <li>1. Connect GitHub App</li>
                   <li>2. Select repositories</li>
                   <li>3. Run initial sync</li>
-                  <li>4. Review first productivity insights</li>
+                  <li>4. Configure production environments</li>
+                  <li>5. Review first productivity and DORA insights</li>
                 </ul>
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
@@ -844,7 +869,20 @@ function AppDashboardPage() {
                     <>
                       <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Manage repositories</button>
                       <button onClick={syncNow} className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Run sync</button>
-                      <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm">View integration logs</button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const logs = await loadIntegrationLogs();
+                            setIntegrationLogs(logs);
+                            setShowIntegrationLogs(true);
+                          } catch (logError) {
+                            setError(logError instanceof Error ? logError.message : "Unknown error");
+                          }
+                        }}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm"
+                      >
+                        View integration logs
+                      </button>
                     </>
                   )}
                 </div>
@@ -855,6 +893,26 @@ function AppDashboardPage() {
                 <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Pull requests collected</p><p className="mt-1 font-semibold">{data?.sync?.total_prs ?? 0}</p></article>
                 <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Last updated</p><p className="mt-1 font-semibold">{formatSyncTime(data?.sync?.finished_at ?? null)}</p></article>
               </div>
+              {showIntegrationLogs ? (
+                <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">Integration logs (latest 20 jobs)</p>
+                    <button onClick={() => setShowIntegrationLogs(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+                  </div>
+                  <div className="space-y-2">
+                    {integrationLogs.length === 0 ? (
+                      <p className="text-sm text-slate-400">No sync logs yet.</p>
+                    ) : (
+                      integrationLogs.map((log, index) => (
+                        <div key={`${log.createdAt ?? "log"}-${index}`} className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-300">
+                          {log.status} • {log.phase} • {log.processedRepositories}/{log.totalRepositories} repos • {log.totalPrs} PRs • {formatSyncTime(log.finishedAt ?? log.startedAt ?? log.createdAt ?? null)}
+                          {log.errorMessage ? ` • error: ${log.errorMessage}` : ""}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
