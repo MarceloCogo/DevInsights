@@ -189,6 +189,7 @@ type DoraOverview = {
     deploymentsAvailable: boolean;
     workflowRunsAvailable: boolean;
     incidentsAvailable: boolean;
+    leadTimeAvailable?: boolean;
   };
 };
 
@@ -924,6 +925,7 @@ function AppDashboardPage() {
                     <li>Deployments: {dora?.coverage.deploymentsAvailable ? "available" : "missing"}</li>
                     <li>Workflow runs: {dora?.coverage.workflowRunsAvailable ? "available" : "missing"}</li>
                     <li>Incidents: {dora?.coverage.incidentsAvailable ? "available" : "missing"}</li>
+                    <li>Lead time: {dora?.coverage.leadTimeAvailable ? "available" : "missing"}</li>
                   </ul>
                 </div>
               </section>
