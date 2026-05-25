@@ -116,6 +116,54 @@ export const ensureSchema = async (pool: Pool | null) => {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists production_environments (
+      organization_id bigint not null references organizations(id),
+      environment_name text not null,
+      created_at timestamptz not null default now(),
+      primary key (organization_id, environment_name)
+    );
+
+    create table if not exists workflow_runs (
+      id bigserial primary key,
+      organization_id bigint not null references organizations(id),
+      repository_full_name text not null,
+      github_workflow_run_id bigint not null,
+      workflow_name text,
+      status text,
+      conclusion text,
+      branch text,
+      commit_sha text,
+      started_at timestamptz,
+      finished_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (organization_id, github_workflow_run_id)
+    );
+
+    create table if not exists deployments (
+      id bigserial primary key,
+      organization_id bigint not null references organizations(id),
+      repository_full_name text not null,
+      github_deployment_id bigint,
+      environment_name text not null,
+      state text,
+      deployed_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (organization_id, github_deployment_id)
+    );
+
+    create table if not exists incidents (
+      id bigserial primary key,
+      organization_id bigint not null references organizations(id),
+      title text not null,
+      started_at timestamptz not null,
+      resolved_at timestamptz,
+      severity text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
     alter table sessions add column if not exists active_organization_id bigint references organizations(id);
     alter table integration_sync_jobs add column if not exists phase text not null default 'pending';
     alter table integration_sync_jobs add column if not exists total_repositories integer not null default 0;
@@ -125,5 +173,8 @@ export const ensureSchema = async (pool: Pool | null) => {
     create index if not exists sync_jobs_org_created_idx on integration_sync_jobs (organization_id, created_at desc);
     create index if not exists pull_requests_org_updated_idx on pull_requests (organization_id, updated_at desc);
     create index if not exists pull_requests_org_state_idx on pull_requests (organization_id, state);
+    create index if not exists deployments_org_deployed_idx on deployments (organization_id, deployed_at desc);
+    create index if not exists workflow_runs_org_finished_idx on workflow_runs (organization_id, finished_at desc);
+    create index if not exists incidents_org_started_idx on incidents (organization_id, started_at desc);
   `);
 };

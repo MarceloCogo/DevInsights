@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { registerAuthRoutes } from "./auth-routes.js";
+import { registerDoraRoutes } from "./dora-routes.js";
 import { registerDashboardRoutes } from "./dashboard-routes.js";
 import { registerIntegrationRoutes } from "./integration-routes.js";
 import { registerOrganizationRoutes } from "./organization-routes.js";
+import { registerSettingsRoutes } from "./settings-routes.js";
 import { registerSystemRoutes } from "./system-routes.js";
 import type { RouteDeps } from "./types.js";
 
@@ -12,6 +14,8 @@ export const registerApiRoutes = (app: FastifyInstance, deps: RouteDeps) => {
   registerOrganizationRoutes(app, deps);
   registerIntegrationRoutes(app, deps);
   registerDashboardRoutes(app, deps);
+  registerDoraRoutes(app, deps);
+  registerSettingsRoutes(app, deps);
 };
 
 export type { RouteDeps } from "./types.js";
