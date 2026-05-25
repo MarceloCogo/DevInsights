@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import FastifyStatic from "@fastify/static";
-import { SignJWT, importPKCS8 } from "jose";
+import { App as GitHubApp } from "@octokit/app";
+import { Octokit } from "@octokit/rest";
 import { Pool } from "pg";
 import { createHmac, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -31,8 +32,6 @@ const githubAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY ?? "";
 const databaseUrl = process.env.DATABASE_URL;
 const hasDatabase = Boolean(databaseUrl);
 
-const oauthStateStore = new Map<string, number>();
-const installationStateStore = new Map<string, { organizationId: number; expiresAt: number }>();
 const pool = hasDatabase ? new Pool({ connectionString: databaseUrl }) : null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "../../web/dist");
@@ -66,32 +65,12 @@ const getWebBaseUrl = (request: { headers: Record<string, string | string[] | un
 
 const signState = (raw: string) => createHmac("sha256", sessionSecret).update(raw).digest("hex");
 
-const createState = () => {
-  const raw = randomBytes(24).toString("hex");
-  const signature = signState(raw);
-  const state = `${raw}.${signature}`;
-  oauthStateStore.set(state, Date.now() + 10 * 60 * 1000);
-  return state;
-};
-
-const verifyState = (state: string | undefined) => {
-  if (!state) {
-    return false;
-  }
-
-  const expiry = oauthStateStore.get(state);
-  if (!expiry || expiry < Date.now()) {
-    return false;
-  }
-
-  const [raw, signature] = state.split(".");
-  if (!raw || !signature) {
-    return false;
-  }
-
-  oauthStateStore.delete(state);
-  return signState(raw) === signature;
-};
+const githubAppClient = githubAppId && githubAppPrivateKey
+  ? new GitHubApp({
+      appId: githubAppId,
+      privateKey: githubAppPrivateKey.replace(/\\n/g, "\n")
+    })
+  : null;
 
 const parseCookies = (cookieHeader: string | undefined) => {
   if (!cookieHeader) {
@@ -234,6 +213,14 @@ const ensureSchema = async () => {
       unique (organization_id, repository_id, github_pr_id)
     );
 
+    create table if not exists auth_states (
+      state text primary key,
+      state_type text not null,
+      organization_id bigint,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now()
+    );
+
     alter table sessions add column if not exists active_organization_id bigint references organizations(id);
 
     create unique index if not exists github_installations_installation_id_idx on github_installations (installation_id);
@@ -277,6 +264,50 @@ const getPool = () => {
   return pool;
 };
 
+const createAuthState = async (stateType: "oauth" | "installation", organizationId?: number) => {
+  const db = getPool();
+  const raw = randomBytes(24).toString("hex");
+  const signature = signState(raw);
+  const state = `${raw}.${signature}`;
+
+  await db.query(
+    `
+      insert into auth_states (state, state_type, organization_id, expires_at)
+      values ($1, $2, $3, now() + interval '10 minutes')
+    `,
+    [state, stateType, organizationId ?? null]
+  );
+
+  return state;
+};
+
+const consumeAuthState = async (state: string | undefined, expectedType: "oauth" | "installation") => {
+  if (!state) {
+    return { ok: false, organizationId: null as number | null };
+  }
+
+  const [raw, signature] = state.split(".");
+  if (!raw || !signature || signState(raw) !== signature) {
+    return { ok: false, organizationId: null as number | null };
+  }
+
+  const db = getPool();
+  const result = await db.query(
+    `
+      delete from auth_states
+      where state = $1 and state_type = $2 and expires_at > now()
+      returning organization_id
+    `,
+    [state, expectedType]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    return { ok: false, organizationId: null as number | null };
+  }
+
+  return { ok: true, organizationId: result.rows[0].organization_id as number | null };
+};
+
 const exchangeOAuthCode = async (code: string) => {
   const response = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -304,35 +335,13 @@ const exchangeOAuthCode = async (code: string) => {
   return body.access_token;
 };
 
-const createInstallationToken = async (installationId: number) => {
-  if (!githubAppPrivateKey || !githubAppId) {
+const createInstallationClient = async (installationId: number) => {
+  if (!githubAppClient) {
     throw new Error("github app env vars are missing");
   }
 
-  const privateKey = await importPKCS8(githubAppPrivateKey.replace(/\\n/g, "\n"), "RS256");
-  const now = Math.floor(Date.now() / 1000);
-  const jwt = await new SignJWT({})
-    .setProtectedHeader({ alg: "RS256" })
-    .setIssuedAt(now - 60)
-    .setExpirationTime(now + 600)
-    .setIssuer(githubAppId)
-    .sign(privateKey);
-
-  const response = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "DevInsights"
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`failed to create installation token (${response.status})`);
-  }
-
-  const body = (await response.json()) as { token: string };
-  return body.token;
+  const octokit = await githubAppClient.getInstallationOctokit(Number(installationId));
+  return octokit as unknown as Octokit;
 };
 
 const getSessionUser = async (cookieHeader: string | undefined) => {
@@ -403,40 +412,6 @@ const getOrganizationIdForUser = async (userId: number, preferredOrganizationId?
   return Number(orgResult.rows[0].organization_id);
 };
 
-const createInstallationState = (organizationId: number) => {
-  const raw = randomBytes(24).toString("hex");
-  const signature = signState(raw);
-  const state = `${raw}.${signature}`;
-  installationStateStore.set(state, {
-    organizationId,
-    expiresAt: Date.now() + 10 * 60 * 1000
-  });
-  return state;
-};
-
-const consumeInstallationState = (state: string | undefined) => {
-  if (!state) {
-    return null;
-  }
-
-  const data = installationStateStore.get(state);
-  if (!data || data.expiresAt < Date.now()) {
-    return null;
-  }
-
-  const [raw, signature] = state.split(".");
-  if (!raw || !signature) {
-    return null;
-  }
-
-  installationStateStore.delete(state);
-  if (signState(raw) !== signature) {
-    return null;
-  }
-
-  return data.organizationId;
-};
-
 const runInitialSync = async (organizationId: number) => {
   const db = getPool();
 
@@ -460,28 +435,23 @@ const runInitialSync = async (organizationId: number) => {
   );
 
   const repositories = selectedRepositoriesResult.rows as Array<{ repository_id: number; full_name: string }>;
-  const installationToken = await createInstallationToken(Number(installationResult.rows[0].installation_id));
+  const octokit = await createInstallationClient(Number(installationResult.rows[0].installation_id));
 
   let totalPrs = 0;
   let processed = 0;
 
   for (const repository of repositories) {
-    const pullsResponse = await fetch(
-      `https://api.github.com/repos/${repository.full_name}/pulls?state=all&per_page=100`,
-      {
-        headers: {
-          Authorization: `Bearer ${installationToken}`,
-          Accept: "application/vnd.github+json",
-          "User-Agent": "DevInsights"
-        }
-      }
-    );
-
-    if (!pullsResponse.ok) {
-      throw new Error(`failed_repo_sync_${repository.full_name}_${pullsResponse.status}`);
+    const [owner, repo] = repository.full_name.split("/");
+    if (!owner || !repo) {
+      continue;
     }
 
-    const pulls = (await pullsResponse.json()) as Array<{
+    const pulls = (await octokit.paginate(octokit.pulls.list, {
+      owner,
+      repo,
+      state: "all",
+      per_page: 100
+    })) as Array<{
       id: number;
       number: number;
       title: string;
@@ -643,7 +613,7 @@ app.get(`${apiBasePath}/auth/github/login`, async (_, reply) => {
     return reply.code(500).send({ error: "missing_github_oauth_env" });
   }
 
-  const state = createState();
+  const state = await createAuthState("oauth");
   const loginUrl = new URL("https://github.com/login/oauth/authorize");
   loginUrl.searchParams.set("client_id", githubClientId);
   loginUrl.searchParams.set("redirect_uri", githubOAuthCallbackUrl);
@@ -659,7 +629,8 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
   }
 
   const { code, state } = request.query as { code?: string; state?: string };
-  if (!code || !verifyState(state)) {
+  const validState = await consumeAuthState(state, "oauth");
+  if (!code || !validState.ok) {
     return reply.code(400).send({ error: "invalid_oauth_state_or_code" });
   }
 
@@ -929,7 +900,7 @@ app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply)
     return reply.code(400).send({ error: "missing_organization" });
   }
 
-  const state = createInstallationState(organizationId);
+  const state = await createAuthState("installation", organizationId);
   const installUrl = `https://github.com/apps/${githubAppName}/installations/new?state=${encodeURIComponent(state)}`;
   return { installUrl };
 });
@@ -955,10 +926,10 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
     return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_installation_id`);
   }
 
-  const organizationIdFromState = consumeInstallationState(state);
+  const installationState = await consumeAuthState(state, "installation");
   const organizationId = await getOrganizationIdForUser(
     session.user.id,
-    organizationIdFromState ?? session.activeOrganizationId
+    (installationState.ok ? installationState.organizationId : null) ?? session.activeOrganizationId
   );
 
   if (!organizationId) {
@@ -1010,24 +981,12 @@ app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply
   const { installation_id: installationId } = installationResult.rows[0];
 
   try {
-    const installationToken = await createInstallationToken(Number(installationId));
-    const repositoriesResponse = await fetch("https://api.github.com/installation/repositories?per_page=100", {
-      headers: {
-        Authorization: `Bearer ${installationToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "DevInsights"
-      }
+    const octokit = await createInstallationClient(Number(installationId));
+    const payload = await octokit.paginate(octokit.apps.listReposAccessibleToInstallation, {
+      per_page: 100
     });
 
-    if (!repositoriesResponse.ok) {
-      throw new Error(`failed to list installation repositories (${repositoriesResponse.status})`);
-    }
-
-    const payload = (await repositoriesResponse.json()) as {
-      repositories: Array<{ id: number; full_name: string; private: boolean }>;
-    };
-
-    for (const repository of payload.repositories) {
+    for (const repository of payload as Array<{ id: number; full_name: string; private: boolean }>) {
       await db.query(
         `
           insert into tracked_repositories (organization_id, repository_id, full_name, private)
