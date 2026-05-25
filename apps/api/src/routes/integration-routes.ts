@@ -75,6 +75,10 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     const repositoryIds = Array.isArray(body.repositoryIds) ? body.repositoryIds : [];
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
+    const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    if ((installationResult.rowCount ?? 0) === 0) {
+      return reply.code(400).send({ error: "integration_not_connected" });
+    }
     await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
     if (repositoryIds.length > 0) {
       await db.query(`update tracked_repositories set selected = true where organization_id = $1 and repository_id = any($2::bigint[])`, [organizationId, repositoryIds]);
@@ -85,10 +89,23 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
 
   app.post(`${apiBasePath}/integrations/github/sync-now`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
+    const db = getPool();
     const session = await getSessionUser(request.cookies[sessionCookieName]);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
+    const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    if ((installationResult.rowCount ?? 0) === 0) {
+      return reply.code(400).send({ error: "integration_not_connected" });
+    }
+    const selectedRepositoriesResult = await db.query(
+      `select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`,
+      [organizationId]
+    );
+    const selectedRepositories = selectedRepositoriesResult.rows[0]?.count ?? 0;
+    if (selectedRepositories === 0) {
+      return reply.code(400).send({ error: "no_selected_repositories" });
+    }
     const jobId = await createSyncJob(organizationId);
     return { ok: true, syncStatus: "queued", jobId };
   });

@@ -535,6 +535,13 @@ function AppDashboardPage() {
         credentials: "include"
       });
       if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (payload?.error === "integration_not_connected") {
+          throw new Error("GitHub App is not connected");
+        }
+        if (payload?.error === "no_selected_repositories") {
+          throw new Error("Select at least one repository before running sync");
+        }
         throw new Error("Failed to start sync");
       }
       const bootstrap = await loadBootstrap();
@@ -643,6 +650,8 @@ function AppDashboardPage() {
   const hasIntegrationData = Boolean(data?.integration.connected);
   const hasPullRequestData = pullRequests.length > 0;
   const showProductivityEmpty = !hasIntegrationData || !hasPullRequestData;
+  const canRunSync = Boolean(data?.integration.connected) && selectedCount > 0;
+  const latestSyncError = syncProgress?.errorMessage ?? data?.sync?.error_message ?? null;
 
   const demoRows: PullRequestItem[] = [
     {
@@ -788,14 +797,25 @@ function AppDashboardPage() {
                     : `Onboarding: step ${onboardingStep}/5. Connect and configure to generate your first real metrics.`}
                 </p>
                 <div className="flex gap-2">
-                  <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
-                  <button onClick={syncNow} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Run initial sync</button>
+                  {!data?.integration.connected ? (
+                    <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
+                  ) : null}
+                  <button
+                    onClick={syncNow}
+                    disabled={!canRunSync}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Run initial sync
+                  </button>
                 </div>
               </div>
               {syncProgress ? (
                 <p className="mt-2 text-xs text-slate-400">
                   Sync: {syncProgress.phase} • {syncProgress.processedRepositories}/{syncProgress.totalRepositories} repositories • {syncProgress.totalPrs} PRs
                 </p>
+              ) : null}
+              {latestSyncError ? (
+                <p className="mt-2 text-xs text-amber-300">Sync error: {latestSyncError}. Connect GitHub and select repositories before running sync.</p>
               ) : null}
             </section>
 
@@ -850,7 +870,16 @@ function AppDashboardPage() {
                   <li>5. Review first productivity and DORA insights</li>
                 </ul>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
+                  {!data?.integration.connected ? (
+                    <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
+                  ) : null}
+                  <button
+                    onClick={syncNow}
+                    disabled={!canRunSync}
+                    className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Run initial sync
+                  </button>
                   <button onClick={() => setDemoMode(true)} className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800">View sample dashboard</button>
                 </div>
               </section>
