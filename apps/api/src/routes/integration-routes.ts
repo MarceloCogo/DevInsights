@@ -34,9 +34,11 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     if (!ensureDatabase(reply)) return;
     const db = getPool();
     const { installation_id: installationId, setup_action: setupAction, state } = request.query as { installation_id?: string; setup_action?: string; state?: string };
+    app.log.info({ installationId: installationId ?? null, hasState: Boolean(state), setupAction: setupAction ?? null }, "github installation callback received");
     if (!installationId) return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_installation_id`);
 
     const installationState = await consumeAuthState(state, "installation");
+    app.log.info({ stateValid: installationState.ok, stateOrganizationId: installationState.organizationId ?? null }, "github installation callback state resolution");
     if (installationState.ok && installationState.organizationId) {
       await db.query(
         `insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
@@ -51,6 +53,7 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
         sameSite: sessionCookieSameSite,
         secure: isProduction
       });
+      app.log.info({ organizationId: installationState.organizationId, installationId: Number(installationId) }, "github installation linked using state organization");
       return reply.redirect(`${getWebBaseUrl(request)}/app?integration=${setupAction ?? "installed"}`);
     }
 
@@ -63,6 +66,7 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
         secure: isProduction,
         maxAge: 60 * 10
       });
+      app.log.warn({ installationId: Number(installationId) }, "github installation callback without active session, deferred linking");
       return reply.redirect(`${getWebBaseUrl(request)}/app/login?next=installation`);
     }
     const organizationId = await getOrganizationIdForUser(session.user.id, (installationState.ok ? installationState.organizationId : null) ?? session.activeOrganizationId);
@@ -74,6 +78,7 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
       sameSite: sessionCookieSameSite,
       secure: isProduction
     });
+    app.log.info({ organizationId, installationId: Number(installationId), userId: session.user.id }, "github installation linked using active session");
     return reply.redirect(`${getWebBaseUrl(request)}/app?integration=${setupAction ?? "installed"}`);
   });
 
