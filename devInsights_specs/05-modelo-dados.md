@@ -1,4 +1,4 @@
-# DevPulse AI — Modelo de Dados Inicial
+# DevInsights — Modelo de Dados Inicial
 
 ## 1. Visão geral
 
@@ -505,4 +505,3 @@ avg(review_comments_or_rework for ai_prs) vs avg(review_comments_or_rework for n
 - incidents(organization_id, started_at)
 - metric_snapshots(organization_id, metric_name, period_start, period_end)
 - integration_sync_jobs(status, scheduled_at)
-

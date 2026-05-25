@@ -1,8 +1,8 @@
-# DevPulse AI — Privacy by Design e Segurança
+# DevInsights — Privacy by Design e Segurança
 
 ## 1. Premissa
 
-O DevPulse AI lida com dados sensíveis de engenharia: metadados de código, fluxo de trabalho, usuários, revisões e produtividade. Por isso, privacidade e segurança devem ser parte do desenho do produto desde o início.
+O DevInsights lida com dados sensiveis de engenharia: metadados de codigo, fluxo de trabalho, usuarios, revisoes e produtividade. Por isso, privacidade e seguranca devem ser parte do desenho do produto desde o inicio.
 
 ## 2. Dados coletados
 
@@ -210,4 +210,3 @@ O produto deve ter uma página explicando:
 - como anonimizar;
 - como excluir;
 - por que não há ranking público.
-

@@ -1,8 +1,8 @@
-# DevPulse AI — Prompts para Kiro Dev
+# DevInsights — Prompts para Kiro Dev
 
 ## Prompt 1 — Criar base do monorepo
 
-Crie um monorepo TypeScript para o projeto DevPulse AI com a seguinte estrutura:
+Crie um monorepo TypeScript para o projeto DevInsights com a seguinte estrutura:
 
 - apps/web: React + Vite + Tailwind CSS + TypeScript
 - apps/api: Node.js + Fastify + TypeScript

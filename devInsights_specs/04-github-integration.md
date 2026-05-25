@@ -1,4 +1,4 @@
-# DevPulse AI — Especificação da Integração GitHub
+# DevInsights — Especificação da Integração GitHub
 
 ## 1. Objetivo
 

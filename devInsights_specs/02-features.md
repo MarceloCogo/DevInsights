@@ -1,4 +1,4 @@
-# DevPulse AI — Especificação de Features
+# DevInsights — Especificação de Features
 
 ## 1. Módulo: Onboarding
 

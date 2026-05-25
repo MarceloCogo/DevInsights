@@ -1,4 +1,4 @@
-# DevPulse AI — Especificação de Design e UX
+# DevInsights — Especificação de Design e UX
 
 ## 1. Direção visual
 
@@ -392,4 +392,3 @@ Preferir:
 - Tooltips não essenciais para entendimento.
 - Gráficos com valores textuais.
 - Estados com ícones + texto, não só cor.
-

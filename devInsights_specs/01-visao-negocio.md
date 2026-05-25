@@ -1,8 +1,8 @@
-# DevPulse AI — Especificação de Negócio
+# DevInsights — Especificação de Negócio
 
 ## 1. Contexto
 
-O DevPulse AI será uma plataforma open source de Engineering Intelligence inspirada em produtos como LinearB, Swarmia e DX, mas desenhada desde o início para o cenário atual de desenvolvimento acelerado por IA.
+O DevInsights e uma plataforma open source de Engineering Intelligence inspirada em produtos como LinearB, Swarmia e DX, desenhada para o cenário atual de desenvolvimento acelerado por IA.
 
 O objetivo não é medir desenvolvedores por volume bruto de atividade, mas entender a saúde do fluxo de engenharia, qualidade, colaboração, entrega, governança e impacto real do uso de IA no ciclo de desenvolvimento.
 
@@ -83,7 +83,7 @@ Quer medir fricções, gargalos de pipeline, qualidade do fluxo de revisão, aut
 
 ## 5. Posicionamento
 
-DevPulse AI é uma plataforma open source de Engineering Intelligence para times modernos que querem medir produtividade real em engenharia considerando velocidade, qualidade, segurança, colaboração, experiência do desenvolvedor e impacto do uso de IA.
+DevInsights e uma plataforma open source de Engineering Intelligence para times modernos que querem medir produtividade real em engenharia considerando velocidade, qualidade, seguranca, colaboracao, experiencia do desenvolvedor e impacto do uso de IA.
 
 ## 6. Inspiração funcional próxima ao LinearB
 
@@ -105,7 +105,7 @@ O produto deve buscar proximidade com as seguintes capacidades típicas de plata
 
 ## 7. Diferencial AI-native
 
-O DevPulse AI deve nascer com uma camada própria para medir impacto de IA:
+O DevInsights deve nascer com uma camada propria para medir impacto de IA:
 
 - PRs assistidos por IA;
 - intensidade de uso de IA;
