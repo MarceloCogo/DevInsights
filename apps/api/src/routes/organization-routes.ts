@@ -72,4 +72,44 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
       repositoryInsights: repoStatsResult.rows[0] ?? { repositories: 0, open_prs: 0, merged_prs: 0 }
     };
   });
+
+  app.get(`${apiBasePath}/onboarding/status`, async (request, reply) => {
+    if (!ensureDatabase(reply)) return;
+    const db = getPool();
+    const session = await getSessionUser(request.cookies[sessionCookieName]);
+    if (!session) return reply.code(401).send({ error: "unauthorized" });
+
+    const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+    if (!organizationId) {
+      return {
+        organizationId: null,
+        step: 0,
+        githubConnected: false,
+        repositoriesSelected: false,
+        syncStarted: false,
+        syncCompleted: false
+      };
+    }
+
+    const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    const reposResult = await db.query(`select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`, [organizationId]);
+    const syncResult = await db.query(`select status from integration_sync_jobs where organization_id = $1 order by created_at desc limit 1`, [organizationId]);
+
+    const githubConnected = (installationResult.rowCount ?? 0) > 0;
+    const repositoriesSelected = (reposResult.rows[0]?.count ?? 0) > 0;
+    const syncStatus = (syncResult.rows[0]?.status as string | undefined) ?? null;
+    const syncStarted = Boolean(syncStatus);
+    const syncCompleted = syncStatus === "completed";
+    const step = !githubConnected ? 1 : !repositoriesSelected ? 2 : !syncCompleted ? 3 : 4;
+
+    return {
+      organizationId,
+      step,
+      githubConnected,
+      repositoriesSelected,
+      syncStarted,
+      syncCompleted,
+      syncStatus
+    };
+  });
 };

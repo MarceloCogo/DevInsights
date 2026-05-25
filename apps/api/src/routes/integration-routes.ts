@@ -121,4 +121,35 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
     return { ok: true, status: "disconnected" };
   });
+
+  app.get(`${apiBasePath}/integrations/github/sync-progress`, async (request, reply) => {
+    if (!ensureDatabase(reply)) return;
+    const db = getPool();
+    const session = await getSessionUser(request.cookies[sessionCookieName]);
+    if (!session) return reply.code(401).send({ error: "unauthorized" });
+    const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+    if (!organizationId) return { status: "idle", phase: "pending", totalRepositories: 0, processedRepositories: 0, totalPrs: 0 };
+
+    const result = await db.query(
+      `select status, phase, total_repositories, processed_repositories, total_prs, started_at, finished_at, error_message
+       from integration_sync_jobs where organization_id = $1 order by created_at desc limit 1`,
+      [organizationId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return { status: "idle", phase: "pending", totalRepositories: 0, processedRepositories: 0, totalPrs: 0 };
+    }
+
+    const row = result.rows[0];
+    return {
+      status: row.status,
+      phase: row.phase,
+      totalRepositories: row.total_repositories ?? 0,
+      processedRepositories: row.processed_repositories ?? 0,
+      totalPrs: row.total_prs ?? 0,
+      startedAt: row.started_at ?? null,
+      finishedAt: row.finished_at ?? null,
+      errorMessage: row.error_message ?? null
+    };
+  });
 };

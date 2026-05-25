@@ -32,7 +32,7 @@ const createInstallationClient = async (installationId: number) => {
   return octokit as unknown as Octokit;
 };
 
-const runInitialSync = async (organizationId: number) => {
+const runInitialSync = async (organizationId: number, jobId: number) => {
   const installationResult = await pool.query(
     `select installation_id from github_installations where organization_id = $1 limit 1`,
     [organizationId]
@@ -53,6 +53,10 @@ const runInitialSync = async (organizationId: number) => {
   );
 
   const repositories = selectedRepositoriesResult.rows as Array<{ repository_id: number; full_name: string }>;
+  await pool.query(
+    `update integration_sync_jobs set phase = 'syncing_prs', total_repositories = $1, processed_repositories = 0, updated_at = now() where id = $2`,
+    [repositories.length, jobId]
+  );
   const octokit = await createInstallationClient(Number(installationResult.rows[0].installation_id));
 
   let totalPrs = 0;
@@ -91,6 +95,11 @@ const runInitialSync = async (organizationId: number) => {
 
     totalPrs += pulls.length;
     processed += 1;
+
+    await pool.query(
+      `update integration_sync_jobs set processed_repositories = $1, updated_at = now() where id = $2`,
+      [processed, jobId]
+    );
 
     for (const pr of pulls) {
       await pool.query(
@@ -160,11 +169,12 @@ const runInitialSync = async (organizationId: number) => {
 
 const processJob = async (jobId: number, organizationId: number) => {
   try {
-    const result = await runInitialSync(organizationId);
+    await pool.query(`update integration_sync_jobs set phase = 'discovering', updated_at = now() where id = $1`, [jobId]);
+    const result = await runInitialSync(organizationId, jobId);
     await pool.query(
       `
         update integration_sync_jobs
-        set status = 'completed', processed_repositories = $1, total_prs = $2, finished_at = now(), updated_at = now()
+        set status = 'completed', phase = 'completed', processed_repositories = $1, total_prs = $2, finished_at = now(), updated_at = now()
         where id = $3
       `,
       [result.processedRepositories, result.totalPrs, jobId]
@@ -174,7 +184,7 @@ const processJob = async (jobId: number, organizationId: number) => {
     await pool.query(
       `
         update integration_sync_jobs
-        set status = 'failed', error_message = $1, finished_at = now(), updated_at = now()
+        set status = 'failed', phase = 'failed', error_message = $1, finished_at = now(), updated_at = now()
         where id = $2
       `,
       [message, jobId]
@@ -202,7 +212,7 @@ const pickPendingJobs = async () => {
     const jobs = result.rows as Array<{ id: number; organization_id: number }>;
     for (const job of jobs) {
       await client.query(
-        `update integration_sync_jobs set status = 'running', updated_at = now() where id = $1`,
+        `update integration_sync_jobs set status = 'running', phase = 'pending', updated_at = now() where id = $1`,
         [job.id]
       );
     }

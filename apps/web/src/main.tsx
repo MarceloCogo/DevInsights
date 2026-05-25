@@ -156,6 +156,27 @@ type PullRequestItem = {
   html_url: string | null;
 };
 
+type OnboardingStatus = {
+  organizationId: number | null;
+  step: number;
+  githubConnected: boolean;
+  repositoriesSelected: boolean;
+  syncStarted: boolean;
+  syncCompleted: boolean;
+  syncStatus?: string | null;
+};
+
+type SyncProgress = {
+  status: string;
+  phase: string;
+  totalRepositories: number;
+  processedRepositories: number;
+  totalPrs: number;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  errorMessage?: string | null;
+};
+
 function AppDashboardPage() {
   const locale = detectLocale();
   const isPt = locale === "pt-BR";
@@ -177,6 +198,8 @@ function AppDashboardPage() {
   >("productivity");
   const [avatarMenuOpen, setAvatarMenuOpen] = React.useState(false);
   const [demoMode, setDemoMode] = React.useState(false);
+  const [onboarding, setOnboarding] = React.useState<OnboardingStatus | null>(null);
+  const [syncProgress, setSyncProgress] = React.useState<SyncProgress | null>(null);
 
   const formatSyncTime = (value: string | null) => {
     if (!value) {
@@ -253,6 +276,22 @@ function AppDashboardPage() {
     return payload;
   }, [apiBaseUrl, periodFilter, stateFilter, repoFilter]);
 
+  const loadOnboardingStatus = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/onboarding/status`, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("Failed to load onboarding status");
+    }
+    return (await response.json()) as OnboardingStatus;
+  }, [apiBaseUrl]);
+
+  const loadSyncProgress = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/integrations/github/sync-progress`, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("Failed to load sync progress");
+    }
+    return (await response.json()) as SyncProgress;
+  }, [apiBaseUrl]);
+
   React.useEffect(() => {
     const load = async () => {
       try {
@@ -274,6 +313,11 @@ function AppDashboardPage() {
         const prsPayload = await loadPullRequests();
         setPullRequests(prsPayload.pullRequests);
         setAvailableRepos(prsPayload.repositories);
+
+        const onboardingPayload = await loadOnboardingStatus();
+        setOnboarding(onboardingPayload);
+        const syncProgressPayload = await loadSyncProgress();
+        setSyncProgress(syncProgressPayload);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unknown error");
       } finally {
@@ -282,7 +326,7 @@ function AppDashboardPage() {
     };
 
     void load();
-  }, [loadBootstrap, loadOverview, loadPullRequests, loadRepositories]);
+  }, [loadBootstrap, loadOverview, loadPullRequests, loadRepositories, loadOnboardingStatus, loadSyncProgress]);
 
   React.useEffect(() => {
     if (!data) {
@@ -334,13 +378,17 @@ function AppDashboardPage() {
           return;
         }
         setData(bootstrap);
+        const onboardingPayload = await loadOnboardingStatus();
+        setOnboarding(onboardingPayload);
+        const syncProgressPayload = await loadSyncProgress();
+        setSyncProgress(syncProgressPayload);
       } catch {
         // ignore polling errors
       }
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [data?.sync, loadBootstrap]);
+  }, [data?.sync, loadBootstrap, loadOnboardingStatus, loadSyncProgress]);
 
   const logout = async () => {
     await fetch(`${apiBaseUrl}/auth/logout`, {
@@ -481,7 +529,7 @@ function AppDashboardPage() {
     }
   };
 
-  const onboardingStep = !data
+  const onboardingStep = onboarding?.step ?? (!data
     ? 0
     : !data.integration.connected
       ? 1
@@ -489,7 +537,7 @@ function AppDashboardPage() {
         ? 2
         : !data.sync || data.sync.status === "pending" || data.sync.status === "running"
           ? 3
-          : 4;
+          : 4);
 
   const activeSectionTitleMap = {
     dashboard: "Dashboard",
@@ -663,6 +711,11 @@ function AppDashboardPage() {
                   <button onClick={syncNow} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">Run initial sync</button>
                 </div>
               </div>
+              {syncProgress ? (
+                <p className="mt-2 text-xs text-slate-400">
+                  Sync: {syncProgress.phase} • {syncProgress.processedRepositories}/{syncProgress.totalRepositories} repositories • {syncProgress.totalPrs} PRs
+                </p>
+              ) : null}
             </section>
 
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">

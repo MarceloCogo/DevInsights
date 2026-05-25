@@ -64,6 +64,8 @@ export const ensureSchema = async (pool: Pool | null) => {
       id bigserial primary key,
       organization_id bigint not null references organizations(id),
       status text not null,
+      phase text not null default 'pending',
+      total_repositories integer not null default 0,
       processed_repositories integer not null default 0,
       total_prs integer not null default 0,
       error_message text,
@@ -115,6 +117,8 @@ export const ensureSchema = async (pool: Pool | null) => {
     );
 
     alter table sessions add column if not exists active_organization_id bigint references organizations(id);
+    alter table integration_sync_jobs add column if not exists phase text not null default 'pending';
+    alter table integration_sync_jobs add column if not exists total_repositories integer not null default 0;
 
     create unique index if not exists github_installations_installation_id_idx on github_installations (installation_id);
     create index if not exists tracked_repositories_org_selected_idx on tracked_repositories (organization_id, selected);
