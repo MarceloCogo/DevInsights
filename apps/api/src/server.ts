@@ -522,34 +522,6 @@ const createSyncJob = async (organizationId: number) => {
   return Number(createdJob.rows[0].id);
 };
 
-const processSyncJob = async (jobId: number, organizationId: number) => {
-  const db = getPool();
-
-  try {
-    await db.query(`update integration_sync_jobs set status = 'running', updated_at = now() where id = $1`, [jobId]);
-    const result = await runInitialSync(organizationId);
-    await db.query(
-      `
-        update integration_sync_jobs
-        set status = 'completed', processed_repositories = $1, total_prs = $2, finished_at = now(), updated_at = now()
-        where id = $3
-      `,
-      [result.processedRepositories, result.totalPrs, jobId]
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "sync_failed";
-    await db.query(
-      `
-        update integration_sync_jobs
-        set status = 'failed', error_message = $1, finished_at = now(), updated_at = now()
-        where id = $2
-      `,
-      [message, jobId]
-    );
-    app.log.error({ err: error, jobId, organizationId }, "sync job failed");
-  }
-};
-
 app.register(FastifyCookie, {
   secret: sessionSecret
 });
@@ -1056,9 +1028,6 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
   }
 
   const jobId = await createSyncJob(organizationId);
-  setImmediate(() => {
-    void processSyncJob(jobId, organizationId);
-  });
   return { ok: true, selectedCount: repositoryIds.length, syncStatus: "queued", jobId };
 });
 
@@ -1078,9 +1047,6 @@ app.post(`${apiBasePath}/integrations/github/sync-now`, async (request, reply) =
   }
 
   const jobId = await createSyncJob(organizationId);
-  setImmediate(() => {
-    void processSyncJob(jobId, organizationId);
-  });
   return { ok: true, syncStatus: "queued", jobId };
 });
 
