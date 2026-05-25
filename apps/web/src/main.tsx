@@ -177,6 +177,21 @@ type SyncProgress = {
   errorMessage?: string | null;
 };
 
+type DoraOverview = {
+  status: "setup_required" | "partial" | "available";
+  period: "30d";
+  deploymentFrequency30d: number;
+  leadTimeForChangesHours: number | null;
+  changeFailureRate: number | null;
+  mttrHours: number | null;
+  coverage: {
+    productionEnvironmentsConfigured: boolean;
+    deploymentsAvailable: boolean;
+    workflowRunsAvailable: boolean;
+    incidentsAvailable: boolean;
+  };
+};
+
 function AppDashboardPage() {
   const locale = detectLocale();
   const isPt = locale === "pt-BR";
@@ -200,6 +215,9 @@ function AppDashboardPage() {
   const [demoMode, setDemoMode] = React.useState(false);
   const [onboarding, setOnboarding] = React.useState<OnboardingStatus | null>(null);
   const [syncProgress, setSyncProgress] = React.useState<SyncProgress | null>(null);
+  const [dora, setDora] = React.useState<DoraOverview | null>(null);
+  const [productionEnvironmentsInput, setProductionEnvironmentsInput] = React.useState("production");
+  const [savingProductionEnvs, setSavingProductionEnvs] = React.useState(false);
 
   const formatSyncTime = (value: string | null) => {
     if (!value) {
@@ -292,6 +310,14 @@ function AppDashboardPage() {
     return (await response.json()) as SyncProgress;
   }, [apiBaseUrl]);
 
+  const loadDoraOverview = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/dashboard/dora-overview`, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error("Failed to load DORA overview");
+    }
+    return (await response.json()) as DoraOverview;
+  }, [apiBaseUrl]);
+
   React.useEffect(() => {
     const load = async () => {
       try {
@@ -318,6 +344,8 @@ function AppDashboardPage() {
         setOnboarding(onboardingPayload);
         const syncProgressPayload = await loadSyncProgress();
         setSyncProgress(syncProgressPayload);
+        const doraPayload = await loadDoraOverview();
+        setDora(doraPayload);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unknown error");
       } finally {
@@ -326,7 +354,7 @@ function AppDashboardPage() {
     };
 
     void load();
-  }, [loadBootstrap, loadOverview, loadPullRequests, loadRepositories, loadOnboardingStatus, loadSyncProgress]);
+  }, [loadBootstrap, loadOverview, loadPullRequests, loadRepositories, loadOnboardingStatus, loadSyncProgress, loadDoraOverview]);
 
   React.useEffect(() => {
     if (!data) {
@@ -382,13 +410,41 @@ function AppDashboardPage() {
         setOnboarding(onboardingPayload);
         const syncProgressPayload = await loadSyncProgress();
         setSyncProgress(syncProgressPayload);
+        const doraPayload = await loadDoraOverview();
+        setDora(doraPayload);
       } catch {
         // ignore polling errors
       }
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [data?.sync, loadBootstrap, loadOnboardingStatus, loadSyncProgress]);
+  }, [data?.sync, loadBootstrap, loadOnboardingStatus, loadSyncProgress, loadDoraOverview]);
+
+  const saveProductionEnvironments = async () => {
+    setSavingProductionEnvs(true);
+    setError(null);
+    try {
+      const environments = productionEnvironmentsInput
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+      const response = await fetch(`${apiBaseUrl}/settings/production-environments`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ environments })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to save production environments");
+      }
+      const doraPayload = await loadDoraOverview();
+      setDora(doraPayload);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unknown error");
+    } finally {
+      setSavingProductionEnvs(false);
+    }
+  };
 
   const logout = async () => {
     await fetch(`${apiBaseUrl}/auth/logout`, {
@@ -839,7 +895,63 @@ function AppDashboardPage() {
               </div>
             </section>
 
-            {(section === "settings" || section === "repositories" || section === "teams" || section === "metrics" || section === "dashboard" || section === "integrations") && (
+            {section === "metrics" && (
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                <h3 className="text-lg font-semibold text-white">DORA Metrics</h3>
+                <p className="mt-2 text-sm text-slate-400">Track deployment frequency and readiness for full DORA coverage.</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <article className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <p className="text-xs text-slate-400">Status</p>
+                    <p className="mt-1 font-semibold text-white">{dora?.status ?? "setup_required"}</p>
+                  </article>
+                  <article className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <p className="text-xs text-slate-400">Deployment Frequency (30d)</p>
+                    <p className="mt-1 font-semibold text-white">{dora?.deploymentFrequency30d ?? 0}</p>
+                  </article>
+                  <article className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <p className="text-xs text-slate-400">Lead Time for Changes</p>
+                    <p className="mt-1 font-semibold text-white">{dora?.leadTimeForChangesHours ?? "pending"}</p>
+                  </article>
+                  <article className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <p className="text-xs text-slate-400">MTTR</p>
+                    <p className="mt-1 font-semibold text-white">{dora?.mttrHours ?? "pending"}</p>
+                  </article>
+                </div>
+                <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
+                  <p>Coverage</p>
+                  <ul className="mt-2 grid gap-1 md:grid-cols-2">
+                    <li>Production environments: {dora?.coverage.productionEnvironmentsConfigured ? "configured" : "missing"}</li>
+                    <li>Deployments: {dora?.coverage.deploymentsAvailable ? "available" : "missing"}</li>
+                    <li>Workflow runs: {dora?.coverage.workflowRunsAvailable ? "available" : "missing"}</li>
+                    <li>Incidents: {dora?.coverage.incidentsAvailable ? "available" : "missing"}</li>
+                  </ul>
+                </div>
+              </section>
+            )}
+
+            {section === "settings" && (
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                <h3 className="text-lg font-semibold text-white">Production environments</h3>
+                <p className="mt-2 text-sm text-slate-400">Configure environments used as production (comma separated).</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input
+                    value={productionEnvironmentsInput}
+                    onChange={(event) => setProductionEnvironmentsInput(event.target.value)}
+                    className="min-w-[280px] flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                    placeholder="production, prod"
+                  />
+                  <button
+                    onClick={saveProductionEnvironments}
+                    disabled={savingProductionEnvs}
+                    className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 disabled:opacity-60"
+                  >
+                    {savingProductionEnvs ? "Saving..." : "Save environments"}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {(section === "repositories" || section === "teams" || section === "dashboard" || section === "integrations") && (
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
                 <h3 className="text-lg font-semibold text-white">{activeSectionTitle}</h3>
                 <p className="mt-2 text-sm text-slate-400">{isPt ? "Seção em evolução. Vamos detalhar esse módulo nas próximas iterações." : "This section is evolving. We will expand this module in the next iterations."}</p>
