@@ -1,4 +1,7 @@
 import Fastify from "fastify";
+import FastifyCookie from "@fastify/cookie";
+import FastifyHelmet from "@fastify/helmet";
+import FastifyRateLimit from "@fastify/rate-limit";
 import FastifyStatic from "@fastify/static";
 import { App as GitHubApp } from "@octokit/app";
 import { Octokit } from "@octokit/rest";
@@ -23,6 +26,8 @@ const apiBasePath = "/api/v1";
 const webBaseUrl = process.env.WEB_BASE_URL ?? "";
 const sessionCookieName = process.env.SESSION_COOKIE_NAME ?? "devinsights.sid";
 const sessionSecret = process.env.SESSION_SECRET ?? "dev-secret";
+const sessionTtlSeconds = 60 * 60 * 24 * 7;
+const isProduction = process.env.NODE_ENV === "production";
 const githubClientId = process.env.GITHUB_CLIENT_ID ?? "";
 const githubClientSecret = process.env.GITHUB_CLIENT_SECRET ?? "";
 const githubOAuthCallbackUrl = process.env.GITHUB_OAUTH_CALLBACK_URL ?? "";
@@ -71,39 +76,6 @@ const githubAppClient = githubAppId && githubAppPrivateKey
       privateKey: githubAppPrivateKey.replace(/\\n/g, "\n")
     })
   : null;
-
-const parseCookies = (cookieHeader: string | undefined) => {
-  if (!cookieHeader) {
-    return {} as Record<string, string>;
-  }
-
-  return Object.fromEntries(
-    cookieHeader
-      .split(";")
-      .map((part) => part.trim().split("="))
-      .filter((parts) => parts.length === 2)
-      .map(([key, value]) => [key, decodeURIComponent(value)])
-  );
-};
-
-const setSessionCookie = (sessionId: string) => {
-  const secure = process.env.NODE_ENV === "production";
-  const parts = [
-    `${sessionCookieName}=${encodeURIComponent(sessionId)}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-    `Max-Age=${60 * 60 * 24 * 7}`
-  ];
-
-  if (secure) {
-    parts.push("Secure");
-  }
-
-  return parts.join("; ");
-};
-
-const clearSessionCookie = () => `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 
 const ensureSchema = async () => {
   if (!pool) {
@@ -344,15 +316,12 @@ const createInstallationClient = async (installationId: number) => {
   return octokit as unknown as Octokit;
 };
 
-const getSessionUser = async (cookieHeader: string | undefined) => {
+const getSessionUser = async (sessionId: string | undefined) => {
   if (!pool) {
     return null;
   }
 
   const db = pool;
-
-  const cookies = parseCookies(cookieHeader);
-  const sessionId = cookies[sessionCookieName];
 
   if (!sessionId) {
     return null;
@@ -539,7 +508,7 @@ const runInitialSync = async (organizationId: number) => {
   };
 };
 
-const createAndRunSyncJob = async (organizationId: number) => {
+const createSyncJob = async (organizationId: number) => {
   const db = getPool();
   const createdJob = await db.query(
     `
@@ -550,49 +519,71 @@ const createAndRunSyncJob = async (organizationId: number) => {
     [organizationId]
   );
 
-  const jobId = Number(createdJob.rows[0].id);
-
-  setImmediate(async () => {
-    try {
-      await db.query(
-        `update integration_sync_jobs set status = 'running', updated_at = now() where id = $1`,
-        [jobId]
-      );
-
-      const result = await runInitialSync(organizationId);
-
-      await db.query(
-        `
-          update integration_sync_jobs
-          set status = 'completed', processed_repositories = $1, total_prs = $2, finished_at = now(), updated_at = now()
-          where id = $3
-        `,
-        [result.processedRepositories, result.totalPrs, jobId]
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "sync_failed";
-      await db.query(
-        `
-          update integration_sync_jobs
-          set status = 'failed', error_message = $1, finished_at = now(), updated_at = now()
-          where id = $2
-        `,
-        [message, jobId]
-      );
-      app.log.error(error);
-    }
-  });
-
-  return jobId;
+  return Number(createdJob.rows[0].id);
 };
+
+const processSyncJob = async (jobId: number, organizationId: number) => {
+  const db = getPool();
+
+  try {
+    await db.query(`update integration_sync_jobs set status = 'running', updated_at = now() where id = $1`, [jobId]);
+    const result = await runInitialSync(organizationId);
+    await db.query(
+      `
+        update integration_sync_jobs
+        set status = 'completed', processed_repositories = $1, total_prs = $2, finished_at = now(), updated_at = now()
+        where id = $3
+      `,
+      [result.processedRepositories, result.totalPrs, jobId]
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "sync_failed";
+    await db.query(
+      `
+        update integration_sync_jobs
+        set status = 'failed', error_message = $1, finished_at = now(), updated_at = now()
+        where id = $2
+      `,
+      [message, jobId]
+    );
+    app.log.error({ err: error, jobId, organizationId }, "sync job failed");
+  }
+};
+
+app.register(FastifyCookie, {
+  secret: sessionSecret
+});
+
+app.register(FastifyHelmet, {
+  global: true,
+  contentSecurityPolicy: false,
+  hsts: isProduction
+    ? {
+        maxAge: 15552000,
+        includeSubDomains: true,
+        preload: true
+      }
+    : false,
+  referrerPolicy: {
+    policy: "strict-origin-when-cross-origin"
+  }
+});
+
+app.register(FastifyRateLimit, {
+  global: false,
+  max: 120,
+  timeWindow: "1 minute"
+});
 
 app.addHook("onRequest", async (request, reply) => {
   const origin = request.headers.origin;
-  const expectedOrigin = webBaseUrl || getWebBaseUrl(request);
-  if (origin && origin.startsWith(expectedOrigin)) {
+  const expectedOrigin = normalizeBaseUrl(webBaseUrl || getWebBaseUrl(request));
+  if (origin && origin === expectedOrigin) {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
-    reply.header("Access-Control-Allow-Headers", "Content-Type");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, X-Requested-With");
+    reply.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    reply.header("Vary", "Origin");
   }
 });
 
@@ -608,7 +599,10 @@ app.get("/auth/github/callback", async (_, reply) => reply.redirect(`${apiBasePa
 app.get("/auth/me", async (_, reply) => reply.redirect(`${apiBasePath}/auth/me`));
 app.post("/auth/logout", async (_, reply) => reply.redirect(`${apiBasePath}/auth/logout`));
 
-app.get(`${apiBasePath}/auth/github/login`, async (_, reply) => {
+app.get(
+  `${apiBasePath}/auth/github/login`,
+  { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+  async (_, reply) => {
   if (!githubClientId || !githubOAuthCallbackUrl) {
     return reply.code(500).send({ error: "missing_github_oauth_env" });
   }
@@ -620,8 +614,9 @@ app.get(`${apiBasePath}/auth/github/login`, async (_, reply) => {
   loginUrl.searchParams.set("scope", "read:user user:email");
   loginUrl.searchParams.set("state", state);
 
-  return reply.redirect(loginUrl.toString());
-});
+    return reply.redirect(loginUrl.toString());
+  }
+);
 
 app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
   if (!ensureDatabase(reply)) {
@@ -629,6 +624,9 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
   }
 
   const { code, state } = request.query as { code?: string; state?: string };
+  if ((code?.length ?? 0) > 512 || (state?.length ?? 0) > 512) {
+    return reply.code(400).send({ error: "invalid_oauth_payload" });
+  }
   const validState = await consumeAuthState(state, "oauth");
   if (!code || !validState.ok) {
     return reply.code(400).send({ error: "invalid_oauth_state_or_code" });
@@ -686,7 +684,13 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
       [sessionId, user.id, activeOrganizationId]
     );
 
-    reply.header("Set-Cookie", setSessionCookie(sessionId));
+    reply.setCookie(sessionCookieName, sessionId, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: isProduction,
+      maxAge: sessionTtlSeconds
+    });
     return reply.redirect(`${getWebBaseUrl(request)}/app`);
   } catch (error) {
     app.log.error(error);
@@ -700,7 +704,7 @@ app.get(`${apiBasePath}/auth/me`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -730,7 +734,7 @@ app.get(`${apiBasePath}/organizations`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -760,7 +764,7 @@ app.post(`${apiBasePath}/organizations/active`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -795,7 +799,7 @@ app.get(`${apiBasePath}/app/bootstrap`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -872,12 +876,17 @@ app.post(`${apiBasePath}/auth/logout`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (session) {
     await db.query(`delete from sessions where id = $1`, [session.sessionId]);
   }
 
-  reply.header("Set-Cookie", clearSessionCookie());
+  reply.clearCookie(sessionCookieName, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProduction
+  });
   return reply.code(204).send();
 });
 
@@ -886,7 +895,7 @@ app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply)
     return;
   }
 
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -911,7 +920,7 @@ app.get(`${apiBasePath}/integrations/github/callback`, async (request, reply) =>
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.redirect(`${getWebBaseUrl(request)}/app/login`);
   }
@@ -954,7 +963,7 @@ app.get(`${apiBasePath}/integrations/github/repositories`, async (request, reply
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -1024,7 +1033,7 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -1046,7 +1055,10 @@ app.post(`${apiBasePath}/integrations/github/repositories/select`, async (reques
     );
   }
 
-  const jobId = await createAndRunSyncJob(organizationId);
+  const jobId = await createSyncJob(organizationId);
+  setImmediate(() => {
+    void processSyncJob(jobId, organizationId);
+  });
   return { ok: true, selectedCount: repositoryIds.length, syncStatus: "queued", jobId };
 });
 
@@ -1055,7 +1067,7 @@ app.post(`${apiBasePath}/integrations/github/sync-now`, async (request, reply) =
     return;
   }
 
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -1065,7 +1077,10 @@ app.post(`${apiBasePath}/integrations/github/sync-now`, async (request, reply) =
     return reply.code(400).send({ error: "missing_organization" });
   }
 
-  const jobId = await createAndRunSyncJob(organizationId);
+  const jobId = await createSyncJob(organizationId);
+  setImmediate(() => {
+    void processSyncJob(jobId, organizationId);
+  });
   return { ok: true, syncStatus: "queued", jobId };
 });
 
@@ -1075,7 +1090,7 @@ app.get(`${apiBasePath}/integrations/github/status`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -1109,7 +1124,7 @@ app.post(`${apiBasePath}/integrations/github/disconnect`, async (request, reply)
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -1131,7 +1146,7 @@ app.get(`${apiBasePath}/dashboard/overview`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
@@ -1212,7 +1227,7 @@ app.get(`${apiBasePath}/dashboard/pull-requests`, async (request, reply) => {
   }
 
   const db = getPool();
-  const session = await getSessionUser(request.headers.cookie);
+  const session = await getSessionUser(request.cookies[sessionCookieName]);
   if (!session) {
     return reply.code(401).send({ error: "unauthorized" });
   }
