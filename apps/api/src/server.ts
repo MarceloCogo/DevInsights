@@ -28,6 +28,9 @@ const sessionCookieName = process.env.SESSION_COOKIE_NAME ?? "devinsights.sid";
 const sessionSecret = process.env.SESSION_SECRET ?? "dev-secret";
 const sessionTtlSeconds = 60 * 60 * 24 * 7;
 const isProduction = process.env.NODE_ENV === "production";
+const sessionCookieSameSite =
+  (process.env.SESSION_COOKIE_SAME_SITE as "lax" | "strict" | "none" | undefined) ??
+  (isProduction ? "none" : "lax");
 const githubClientId = process.env.GITHUB_CLIENT_ID ?? "";
 const githubClientSecret = process.env.GITHUB_CLIENT_SECRET ?? "";
 const githubOAuthCallbackUrl = process.env.GITHUB_OAUTH_CALLBACK_URL ?? "";
@@ -550,7 +553,7 @@ app.register(FastifyRateLimit, {
 app.addHook("onRequest", async (request, reply) => {
   const origin = request.headers.origin;
   const expectedOrigin = normalizeBaseUrl(webBaseUrl || getWebBaseUrl(request));
-  if (origin && origin === expectedOrigin) {
+  if (origin && normalizeBaseUrl(origin) === expectedOrigin) {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
     reply.header("Access-Control-Allow-Headers", "Content-Type, X-Requested-With");
@@ -659,7 +662,7 @@ app.get(`${apiBasePath}/auth/github/callback`, async (request, reply) => {
     reply.setCookie(sessionCookieName, sessionId, {
       path: "/",
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: sessionCookieSameSite,
       secure: isProduction,
       maxAge: sessionTtlSeconds
     });
@@ -856,7 +859,7 @@ app.post(`${apiBasePath}/auth/logout`, async (request, reply) => {
   reply.clearCookie(sessionCookieName, {
     path: "/",
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: sessionCookieSameSite,
     secure: isProduction
   });
   return reply.code(204).send();
