@@ -32,6 +32,7 @@ export type RouteDeps = {
   getSessionUser: (sessionId: string | undefined) => Promise<SessionUser | null>;
   getOrganizationIdForUser: (userId: number, preferredOrganizationId?: number | null) => Promise<number | null>;
   createInstallationClient: (installationId: number) => Promise<any>;
+  resolveInstallationIdForAccount: (accountLogin: string) => Promise<number | null>;
   createSyncJob: (organizationId: number) => Promise<number>;
   getWebBaseUrl: (request: { headers: Record<string, string | string[] | undefined> }) => string;
 };

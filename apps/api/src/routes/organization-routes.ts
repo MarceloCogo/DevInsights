@@ -2,7 +2,31 @@ import type { FastifyInstance } from "fastify";
 import type { RouteDeps } from "./types.js";
 
 export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps) => {
-  const { apiBasePath, sessionCookieName, ensureDatabase, getPool, getSessionUser, getOrganizationIdForUser } = deps;
+  const { apiBasePath, sessionCookieName, ensureDatabase, getPool, getSessionUser, getOrganizationIdForUser, resolveInstallationIdForAccount } = deps;
+
+  const ensureInstallationLinked = async (organizationId: number, githubLogin: string) => {
+    const db = getPool();
+    const current = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    if ((current.rowCount ?? 0) > 0) {
+      return current.rows[0].installation_id as number;
+    }
+
+    const resolvedInstallationId = await resolveInstallationIdForAccount(githubLogin);
+    if (!resolvedInstallationId) {
+      return null;
+    }
+
+    await db.query(
+      `insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
+       values ($1, $2, $3, 'User', null)
+       on conflict (organization_id)
+       do update set installation_id = excluded.installation_id, account_login = excluded.account_login, account_type = excluded.account_type, updated_at = now()`,
+      [organizationId, resolvedInstallationId, githubLogin]
+    );
+
+    app.log.info({ organizationId, githubLogin, installationId: resolvedInstallationId }, "github installation reconciled during organization bootstrap");
+    return resolvedInstallationId;
+  };
 
   app.get(`${apiBasePath}/organizations`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
@@ -54,7 +78,7 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
     }
 
     const orgResult = await db.query(`select id, name from organizations where id = $1`, [organizationId]);
-    const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    const installationId = await ensureInstallationLinked(organizationId, session.user.github_login);
     const selectedRepositoriesResult = await db.query(`select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`, [organizationId]);
     const lastSyncResult = await db.query(`select id, status, processed_repositories, total_prs, error_message, started_at, finished_at from integration_sync_jobs where organization_id = $1 order by created_at desc limit 1`, [organizationId]);
     const repoStatsResult = await db.query(`select count(*)::int as repositories, coalesce(sum(open_prs), 0)::int as open_prs, coalesce(sum(merged_prs), 0)::int as merged_prs from repository_sync_stats where organization_id = $1`, [organizationId]);
@@ -65,7 +89,7 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
       organizations: (await db.query(`select o.id, o.name, om.role from organization_members om join organizations o on o.id = om.organization_id where om.user_id = $1 order by o.created_at asc`, [session.user.id])).rows,
       activeOrganizationId: organizationId,
       integration: {
-        connected: (installationResult.rowCount ?? 0) > 0,
+        connected: Boolean(installationId),
         selectedRepositories: selectedRepositoriesResult.rows[0]?.count ?? 0
       },
       sync: lastSyncResult.rows[0] ?? null,
@@ -91,12 +115,12 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
       };
     }
 
-    const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    const installationId = await ensureInstallationLinked(organizationId, session.user.github_login);
     const reposResult = await db.query(`select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`, [organizationId]);
     const syncResult = await db.query(`select status from integration_sync_jobs where organization_id = $1 order by created_at desc limit 1`, [organizationId]);
     const productionEnvResult = await db.query(`select count(*)::int as count from production_environments where organization_id = $1`, [organizationId]);
 
-    const githubConnected = (installationResult.rowCount ?? 0) > 0;
+    const githubConnected = Boolean(installationId);
     const repositoriesSelected = (reposResult.rows[0]?.count ?? 0) > 0;
     const syncStatus = (syncResult.rows[0]?.status as string | undefined) ?? null;
     const syncStarted = Boolean(syncStatus);

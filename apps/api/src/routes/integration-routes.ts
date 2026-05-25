@@ -15,9 +15,38 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     getSessionUser,
     getOrganizationIdForUser,
     createInstallationClient,
+    resolveInstallationIdForAccount,
     createSyncJob,
     getWebBaseUrl
   } = deps;
+
+  const ensureInstallationLinked = async (organizationId: number, githubLogin: string) => {
+    const db = getPool();
+    const current = await db.query(
+      `select installation_id, account_login, account_type from github_installations where organization_id = $1 limit 1`,
+      [organizationId]
+    );
+    if ((current.rowCount ?? 0) > 0) {
+      return current.rows[0];
+    }
+
+    const resolvedInstallationId = await resolveInstallationIdForAccount(githubLogin);
+    if (!resolvedInstallationId) {
+      return null;
+    }
+
+    const upsert = await db.query(
+      `insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
+       values ($1, $2, $3, 'User', null)
+       on conflict (organization_id)
+       do update set installation_id = excluded.installation_id, account_login = excluded.account_login, account_type = excluded.account_type, updated_at = now()
+       returning installation_id, account_login, account_type`,
+      [organizationId, resolvedInstallationId, githubLogin]
+    );
+
+    app.log.info({ organizationId, githubLogin, installationId: resolvedInstallationId }, "github installation reconciled from app installations");
+    return upsert.rows[0] ?? null;
+  };
 
   app.get(`${apiBasePath}/integrations/github/install-url`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
@@ -89,11 +118,11 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     if (!session) return reply.code(401).send({ error: "unauthorized" });
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return { connected: false, repositories: [] };
-    const installationResult = await db.query(`select organization_id, installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
-    if (installationResult.rowCount === 0) return { connected: false, repositories: [] };
+    const installation = await ensureInstallationLinked(organizationId, session.user.github_login);
+    if (!installation?.installation_id) return { connected: false, repositories: [] };
 
     try {
-      const octokit = await createInstallationClient(Number(installationResult.rows[0].installation_id));
+      const octokit = await createInstallationClient(Number(installation.installation_id));
       const payload = await octokit.paginate(octokit.apps.listReposAccessibleToInstallation, { per_page: 100 });
       for (const repository of payload as Array<{ id: number; full_name: string; private: boolean }>) {
         await db.query(`insert into tracked_repositories (organization_id, repository_id, full_name, private) values ($1, $2, $3, $4) on conflict (organization_id, repository_id) do update set full_name = excluded.full_name, private = excluded.private, updated_at = now()`, [organizationId, repository.id, repository.full_name, repository.private]);
@@ -157,12 +186,12 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     if (!session) return reply.code(401).send({ error: "unauthorized" });
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return { connected: false, status: "disconnected" };
-    const installationResult = await db.query(`select installation_id, account_login, account_type from github_installations where organization_id = $1 limit 1`, [organizationId]);
+    const installation = await ensureInstallationLinked(organizationId, session.user.github_login);
     const selectedRepositoriesResult = await db.query(`select count(*)::int as count from tracked_repositories where organization_id = $1 and selected = true`, [organizationId]);
     return {
-      connected: (installationResult.rowCount ?? 0) > 0,
-      status: (installationResult.rowCount ?? 0) > 0 ? "connected" : "disconnected",
-      installation: installationResult.rows[0] ?? null,
+      connected: Boolean(installation?.installation_id),
+      status: installation?.installation_id ? "connected" : "disconnected",
+      installation: installation ?? null,
       selectedRepositories: selectedRepositoriesResult.rows[0]?.count ?? 0
     };
   });

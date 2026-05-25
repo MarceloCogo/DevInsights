@@ -157,6 +157,23 @@ const createInstallationClient = async (installationId: number) => {
   return octokit as unknown as Octokit;
 };
 
+const resolveInstallationIdForAccount = async (accountLogin: string) => {
+  if (!githubAppClient || !accountLogin) return null;
+
+  try {
+    const installationsResponse = await githubAppClient.octokit.request("GET /app/installations", {
+      per_page: 100
+    });
+    const match = installationsResponse.data.find(
+      (installation) => installation.account?.login?.toLowerCase() === accountLogin.toLowerCase()
+    );
+    return match ? Number(match.id) : null;
+  } catch (error) {
+    app.log.error({ error, accountLogin }, "failed to resolve installation for account");
+    return null;
+  }
+};
+
 const getSessionUser = async (sessionId: string | undefined) => {
   if (!pool || !sessionId) return null;
   const result = await pool.query(
@@ -246,6 +263,7 @@ registerApiRoutes(app, {
   getSessionUser,
   getOrganizationIdForUser,
   createInstallationClient,
+  resolveInstallationIdForAccount,
   createSyncJob,
   getWebBaseUrl
 });
