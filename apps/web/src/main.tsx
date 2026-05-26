@@ -226,6 +226,7 @@ function AppDashboardPage() {
   const [loadingRepositories, setLoadingRepositories] = React.useState(false);
   const [repositoriesLoadedOnce, setRepositoriesLoadedOnce] = React.useState(false);
   const [savingRepos, setSavingRepos] = React.useState(false);
+  const [disconnectingIntegration, setDisconnectingIntegration] = React.useState(false);
   const [changingOrg, setChangingOrg] = React.useState(false);
   const [overview, setOverview] = React.useState<DashboardOverview | null>(null);
   const [pullRequests, setPullRequests] = React.useState<PullRequestItem[]>([]);
@@ -637,6 +638,7 @@ function AppDashboardPage() {
       if (!confirmed) {
         return;
       }
+      setDisconnectingIntegration(true);
       const response = await fetch(`${apiBaseUrl}/integrations/github/disconnect`, {
         method: "POST",
         credentials: "include"
@@ -652,6 +654,9 @@ function AppDashboardPage() {
       if (bootstrap) {
         setData(bootstrap);
       }
+      setSyncProgress(null);
+      setOnboarding(null);
+      setShowIntegrationLogs(false);
 
       const overviewPayload = await loadOverview();
       setOverview(overviewPayload);
@@ -661,6 +666,8 @@ function AppDashboardPage() {
       setAvailableRepos(prsPayload.repositories);
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : "Unknown error");
+    } finally {
+      setDisconnectingIntegration(false);
     }
   };
 
@@ -1008,8 +1015,8 @@ function AppDashboardPage() {
                     {loadingRepositories ? "Loading..." : "Manage repositories"}
                   </button>
                   <button onClick={syncNow} disabled={!canRunSync || integrationUiState === "SYNCING"} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">Run sync</button>
-                  <button onClick={disconnectIntegration} disabled={!connected} className="rounded-lg border border-red-900/70 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40 disabled:opacity-50">
-                    Disconnect
+                  <button onClick={disconnectIntegration} disabled={!connected || disconnectingIntegration} className="rounded-lg border border-red-900/70 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40 disabled:opacity-50">
+                    {disconnectingIntegration ? "Disconnecting..." : "Disconnect"}
                   </button>
                   <button
                     onClick={async () => {
