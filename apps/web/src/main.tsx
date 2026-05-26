@@ -99,6 +99,7 @@ type AppBootstrapResponse = {
   activeOrganizationId: number | null;
   integration: {
     connected: boolean;
+    installationId?: number | null;
     selectedRepositories: number;
   };
   sync: {
@@ -307,6 +308,15 @@ function AppDashboardPage() {
       setLoadingRepositories(false);
     }
   }, [loadRepositories]);
+
+  const openGitHubInstallationSettings = React.useCallback(() => {
+    const installationId = data?.integration.installationId;
+    if (!installationId) {
+      setError("Missing installation id. Reconnect GitHub App and try again.");
+      return;
+    }
+    window.open(`https://github.com/settings/installations/${installationId}`, "_blank", "noopener,noreferrer");
+  }, [data?.integration.installationId]);
 
   const loadOverview = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/dashboard/overview`, { credentials: "include" });
@@ -1121,14 +1131,22 @@ function AppDashboardPage() {
                   <p className="mt-4 text-sm text-slate-400">Connect GitHub App first to load repositories.</p>
                 ) : repositories.length === 0 ? (
                   <div className="mt-4 space-y-3">
-                    <p className="text-sm text-slate-400">No repositories loaded yet. Run repository discovery and try again.</p>
-                    <button
-                      onClick={discoverRepositories}
-                      disabled={loadingRepositories}
-                      className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
-                    >
-                      {loadingRepositories ? "Loading repositories..." : "Retry repository discovery"}
-                    </button>
+                    <p className="text-sm text-slate-400">No repositories available to select yet. First grant repository access in GitHub App settings, then run discovery.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={openGitHubInstallationSettings}
+                        className="rounded-lg bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-900"
+                      >
+                        Configure access in GitHub
+                      </button>
+                      <button
+                        onClick={discoverRepositories}
+                        disabled={loadingRepositories}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        {loadingRepositories ? "Loading repositories..." : "Retry repository discovery"}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="mt-4 grid gap-2">

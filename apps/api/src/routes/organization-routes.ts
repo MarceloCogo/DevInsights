@@ -90,6 +90,7 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
       activeOrganizationId: organizationId,
       integration: {
         connected: Boolean(installationId),
+        installationId,
         selectedRepositories: selectedRepositoriesResult.rows[0]?.count ?? 0
       },
       sync: lastSyncResult.rows[0] ?? null,

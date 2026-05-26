@@ -154,11 +154,12 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     const db = getPool();
     const session = await getSessionUser(request.cookies[sessionCookieName]);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
-    const body = request.body as { repositoryIds?: number[] };
-    const repositoryIds = Array.isArray(body.repositoryIds)
-      ? body.repositoryIds.filter((id) => Number.isInteger(id) && id > 0)
-      : [];
-    if (Array.isArray(body.repositoryIds) && repositoryIds.length !== body.repositoryIds.length) {
+    const body = request.body as { repositoryIds?: Array<number | string> };
+    const rawRepositoryIds = Array.isArray(body.repositoryIds) ? body.repositoryIds : [];
+    const repositoryIds = rawRepositoryIds
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0);
+    if (rawRepositoryIds.length !== repositoryIds.length) {
       return reply.code(400).send({ error: "invalid_repository_ids" });
     }
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
