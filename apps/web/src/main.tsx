@@ -633,6 +633,10 @@ function AppDashboardPage() {
 
   const disconnectIntegration = async () => {
     try {
+      const confirmed = window.confirm("Disconnect GitHub App and clear selected repositories for this organization?");
+      if (!confirmed) {
+        return;
+      }
       const response = await fetch(`${apiBaseUrl}/integrations/github/disconnect`, {
         method: "POST",
         credentials: "include"
@@ -719,6 +723,30 @@ function AppDashboardPage() {
       : integrationUiState === "SYNCING"
         ? { label: "Sync in progress", onClick: () => undefined, disabled: true }
         : { label: "Run initial sync", onClick: syncNow, disabled: !canRunSync };
+
+  const integrationStateLabel = integrationUiState === "DISCONNECTED"
+    ? "Disconnected"
+    : integrationUiState === "CONNECTED_NO_REPOS"
+      ? "Connected - repositories not loaded"
+      : integrationUiState === "READY_TO_SYNC"
+        ? "Ready to sync"
+        : integrationUiState === "SYNCING"
+          ? "Syncing"
+          : integrationUiState === "SYNCED_NO_DATA"
+            ? "Synced - no PR data"
+            : "Synced with data";
+
+  const integrationHint = integrationUiState === "DISCONNECTED"
+    ? "Connect GitHub App to authorize repositories for this organization."
+    : integrationUiState === "CONNECTED_NO_REPOS"
+      ? "Grant repository access in GitHub App settings, then load repositories."
+      : integrationUiState === "READY_TO_SYNC"
+        ? "Select repositories and run the first sync to collect PR data."
+        : integrationUiState === "SYNCING"
+          ? "Sync is in progress. You can track detailed phases below."
+          : integrationUiState === "SYNCED_NO_DATA"
+            ? "Sync completed, but no PRs were collected from selected repositories."
+            : "Integration is healthy and delivering productivity signals.";
 
   React.useEffect(() => {
     if (section !== "repositories" || !connected || repositoriesLoadedOnce || loadingRepositories) {
@@ -964,13 +992,25 @@ function AppDashboardPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-white">GitHub integration</h3>
-                  <p className="text-sm text-slate-400">{data?.integration.connected ? "Connected" : "Not connected"} • Last sync {formatSyncTime(data?.sync?.finished_at ?? data?.sync?.started_at ?? null)}</p>
+                  <p className="text-sm text-slate-300">{integrationStateLabel} • Last sync {formatSyncTime(data?.sync?.finished_at ?? data?.sync?.started_at ?? null)}</p>
+                  <p className="mt-1 text-xs text-slate-400">{integrationHint}</p>
                 </div>
                 <div className="flex gap-2">
+                  {!connected ? (
+                    <button
+                      onClick={connectGitHubApp}
+                      className="rounded-lg bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-300"
+                    >
+                      Connect GitHub App
+                    </button>
+                  ) : null}
                   <button onClick={discoverRepositories} disabled={!connected || loadingRepositories} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">
                     {loadingRepositories ? "Loading..." : "Manage repositories"}
                   </button>
                   <button onClick={syncNow} disabled={!canRunSync || integrationUiState === "SYNCING"} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">Run sync</button>
+                  <button onClick={disconnectIntegration} disabled={!connected} className="rounded-lg border border-red-900/70 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40 disabled:opacity-50">
+                    Disconnect
+                  </button>
                   <button
                     onClick={async () => {
                       try {
