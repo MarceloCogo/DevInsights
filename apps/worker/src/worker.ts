@@ -40,7 +40,7 @@ const syncWorkflowRuns = async (
   const [owner, repo] = repositoryFullName.split("/");
   if (!owner || !repo) return;
 
-  const runs = await octokit.paginate(octokit.actions.listWorkflowRunsForRepo, {
+  const runs = await octokit.paginate(octokit.rest.actions.listWorkflowRunsForRepo, {
     owner,
     repo,
     per_page: 50
@@ -98,7 +98,7 @@ const syncDeployments = async (
   const [owner, repo] = repositoryFullName.split("/");
   if (!owner || !repo) return;
 
-  const deploymentResponse = await octokit.repos.listDeployments({
+  const deploymentResponse = await octokit.rest.repos.listDeployments({
     owner,
     repo,
     per_page: 30
@@ -113,7 +113,7 @@ const syncDeployments = async (
     let deployedAt = deployment.created_at ?? null;
 
     try {
-      const statuses = await octokit.repos.listDeploymentStatuses({
+      const statuses = await octokit.rest.repos.listDeploymentStatuses({
         owner,
         repo,
         deployment_id: deployment.id,
@@ -190,7 +190,7 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
       continue;
     }
 
-    const pulls = (await octokit.paginate(octokit.pulls.list, {
+    const pulls = (await octokit.paginate(octokit.rest.pulls.list, {
       owner,
       repo,
       state: "all",

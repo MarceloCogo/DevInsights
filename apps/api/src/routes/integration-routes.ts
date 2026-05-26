@@ -123,7 +123,7 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
 
     try {
       const octokit = await createInstallationClient(Number(installation.installation_id));
-      const payload = await octokit.paginate(octokit.apps.listReposAccessibleToInstallation, { per_page: 100 });
+      const payload = await octokit.paginate(octokit.rest.apps.listReposAccessibleToInstallation, { per_page: 100 });
       for (const repository of payload as Array<{ id: number; full_name: string; private: boolean }>) {
         await db.query(`insert into tracked_repositories (organization_id, repository_id, full_name, private) values ($1, $2, $3, $4) on conflict (organization_id, repository_id) do update set full_name = excluded.full_name, private = excluded.private, updated_at = now()`, [organizationId, repository.id, repository.full_name, repository.private]);
       }
