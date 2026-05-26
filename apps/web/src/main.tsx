@@ -222,6 +222,8 @@ function AppDashboardPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [data, setData] = React.useState<AppBootstrapResponse | null>(null);
   const [repositories, setRepositories] = React.useState<Repository[]>([]);
+  const [loadingRepositories, setLoadingRepositories] = React.useState(false);
+  const [repositoriesLoadedOnce, setRepositoriesLoadedOnce] = React.useState(false);
   const [savingRepos, setSavingRepos] = React.useState(false);
   const [changingOrg, setChangingOrg] = React.useState(false);
   const [overview, setOverview] = React.useState<DashboardOverview | null>(null);
@@ -289,6 +291,22 @@ function AppDashboardPage() {
     const payload = (await response.json()) as { connected: boolean; repositories: Repository[] };
     return payload.repositories;
   }, [apiBaseUrl]);
+
+  const discoverRepositories = React.useCallback(async () => {
+    setLoadingRepositories(true);
+    setError(null);
+    try {
+      const repos = await loadRepositories();
+      setRepositories(repos);
+      setRepositoriesLoadedOnce(true);
+      setSection("repositories");
+    } catch (discoverError) {
+      setError(discoverError instanceof Error ? discoverError.message : "Failed to load repositories");
+      setSection("repositories");
+    } finally {
+      setLoadingRepositories(false);
+    }
+  }, [loadRepositories]);
 
   const loadOverview = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/dashboard/overview`, { credentials: "include" });
@@ -364,6 +382,7 @@ function AppDashboardPage() {
         if (bootstrap.integration.connected) {
           const repos = await loadRepositories();
           setRepositories(repos);
+          setRepositoriesLoadedOnce(true);
         }
 
         const overviewPayload = await loadOverview();
@@ -579,10 +598,15 @@ function AppDashboardPage() {
       const bootstrap = await loadBootstrap();
       if (bootstrap) {
         setData(bootstrap);
+        if (bootstrap.integration.connected) {
+          const repos = await loadRepositories();
+          setRepositories(repos);
+          setRepositoriesLoadedOnce(true);
+        } else {
+          setRepositories([]);
+          setRepositoriesLoadedOnce(false);
+        }
       }
-
-      const repos = await loadRepositories();
-      setRepositories(repos);
 
       const overviewPayload = await loadOverview();
       setOverview(overviewPayload);
@@ -609,6 +633,7 @@ function AppDashboardPage() {
       }
 
       setRepositories([]);
+      setRepositoriesLoadedOnce(false);
       const bootstrap = await loadBootstrap();
       if (bootstrap) {
         setData(bootstrap);
@@ -680,10 +705,17 @@ function AppDashboardPage() {
   const primaryAction = integrationUiState === "DISCONNECTED"
     ? { label: "Connect GitHub App", onClick: connectGitHubApp, disabled: false }
     : integrationUiState === "CONNECTED_NO_REPOS"
-      ? { label: "Select repositories", onClick: () => setSection("repositories"), disabled: false }
+      ? { label: loadingRepositories ? "Loading repositories..." : "Load repositories", onClick: discoverRepositories, disabled: loadingRepositories }
       : integrationUiState === "SYNCING"
         ? { label: "Sync in progress", onClick: () => undefined, disabled: true }
         : { label: "Run initial sync", onClick: syncNow, disabled: !canRunSync };
+
+  React.useEffect(() => {
+    if (section !== "repositories" || !connected || repositoriesLoadedOnce || loadingRepositories) {
+      return;
+    }
+    void discoverRepositories();
+  }, [section, connected, repositoriesLoadedOnce, loadingRepositories, discoverRepositories]);
 
   const demoRows: PullRequestItem[] = [
     {
@@ -907,11 +939,11 @@ function AppDashboardPage() {
                     {primaryAction.label}
                   </button>
                   <button
-                    onClick={() => setSection("repositories")}
-                    disabled={!connected}
+                    onClick={discoverRepositories}
+                    disabled={!connected || loadingRepositories}
                     className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Manage repositories
+                    {loadingRepositories ? "Loading repositories..." : "Manage repositories"}
                   </button>
                   <button onClick={() => setDemoMode(true)} className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800">View sample dashboard</button>
                 </div>
@@ -925,7 +957,9 @@ function AppDashboardPage() {
                   <p className="text-sm text-slate-400">{data?.integration.connected ? "Connected" : "Not connected"} • Last sync {formatSyncTime(data?.sync?.finished_at ?? data?.sync?.started_at ?? null)}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setSection("repositories")} disabled={!connected} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">Manage repositories</button>
+                  <button onClick={discoverRepositories} disabled={!connected || loadingRepositories} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">
+                    {loadingRepositories ? "Loading..." : "Manage repositories"}
+                  </button>
                   <button onClick={syncNow} disabled={!canRunSync || integrationUiState === "SYNCING"} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">Run sync</button>
                   <button
                     onClick={async () => {
@@ -945,7 +979,7 @@ function AppDashboardPage() {
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-4">
                 <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Connection status</p><p className="mt-1 font-semibold">{data?.integration.connected ? "Connected" : "Not connected"}</p></article>
-                <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Selected repositories</p><p className="mt-1 font-semibold">{selectedCount}</p></article>
+                <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Selected repositories</p><p className="mt-1 font-semibold">{selectedRepositories}</p></article>
                 <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Pull requests collected</p><p className="mt-1 font-semibold">{data?.sync?.total_prs ?? 0}</p></article>
                 <article className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Last updated</p><p className="mt-1 font-semibold">{formatSyncTime(data?.sync?.finished_at ?? null)}</p></article>
               </div>
@@ -1086,7 +1120,16 @@ function AppDashboardPage() {
                 {!connected ? (
                   <p className="mt-4 text-sm text-slate-400">Connect GitHub App first to load repositories.</p>
                 ) : repositories.length === 0 ? (
-                  <p className="mt-4 text-sm text-slate-400">No repositories loaded yet. Open Integrations and run repository discovery.</p>
+                  <div className="mt-4 space-y-3">
+                    <p className="text-sm text-slate-400">No repositories loaded yet. Run repository discovery and try again.</p>
+                    <button
+                      onClick={discoverRepositories}
+                      disabled={loadingRepositories}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {loadingRepositories ? "Loading repositories..." : "Retry repository discovery"}
+                    </button>
+                  </div>
                 ) : (
                   <div className="mt-4 grid gap-2">
                     {repositories.map((repository) => (
