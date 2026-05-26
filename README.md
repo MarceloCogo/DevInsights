@@ -84,6 +84,15 @@ See `.env.example` for defaults and local values.
 - Strict CORS with credentialed requests for configured web origin
 - Web security headers and CSP baseline
 
+## Operations
+
+- API boot runs versioned SQL migrations from `apps/api/src/storage/migrations`.
+- Run smoke checks with `pnpm smoke:e2e`.
+- Optionally pass authenticated session cookie:
+  - `SMOKE_BASE_URL=https://devinsightsapp.up.railway.app`
+  - `SESSION_COOKIE_NAME=devinsights.sid`
+  - `SMOKE_SESSION_COOKIE=<session-id>`
+
 ## Product Positioning
 
 DevInsights is built for:

@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerApiRoutes } from "./routes/api-routes.js";
 import { registerStaticRoutes } from "./routes/static-routes.js";
-import { ensureSchema } from "./storage/ensure-schema.js";
+import { runMigrations } from "./storage/migration-runner.js";
 
 type GitHubUser = {
   id: number;
@@ -44,6 +44,7 @@ const hasDatabase = Boolean(databaseUrl);
 const pool = hasDatabase ? new Pool({ connectionString: databaseUrl }) : null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "../../web/dist");
+const migrationsPath = join(__dirname, "./storage/migrations");
 
 const normalizeBaseUrl = (value: string) => {
   const trimmed = value.trim().replace(/\/$/, "");
@@ -276,7 +277,9 @@ registerStaticRoutes(app, {
 
 const start = async () => {
   try {
-    await ensureSchema(pool);
+    if (pool) {
+      await runMigrations(pool, migrationsPath);
+    }
     await app.listen({ port, host });
     app.log.info({ hasDatabase }, `api listening on ${port}`);
   } catch (error) {

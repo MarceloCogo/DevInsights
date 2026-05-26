@@ -8,6 +8,7 @@
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
     "start": "node apps/api/dist/server.js",
+    "smoke:e2e": "node scripts/smoke-e2e.mjs",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   },

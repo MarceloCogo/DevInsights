@@ -141,7 +141,12 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     const session = await getSessionUser(request.cookies[sessionCookieName]);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
     const body = request.body as { repositoryIds?: number[] };
-    const repositoryIds = Array.isArray(body.repositoryIds) ? body.repositoryIds : [];
+    const repositoryIds = Array.isArray(body.repositoryIds)
+      ? body.repositoryIds.filter((id) => Number.isInteger(id) && id > 0)
+      : [];
+    if (Array.isArray(body.repositoryIds) && repositoryIds.length !== body.repositoryIds.length) {
+      return reply.code(400).send({ error: "invalid_repository_ids" });
+    }
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
     const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);

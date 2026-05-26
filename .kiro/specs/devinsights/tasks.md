@@ -15,10 +15,10 @@
 
 ### P0 - Fundacao para escalar sem gambiarra
 
-- [ ] Substituir `ensureSchema` por migrations versionadas
+- [x] Substituir `ensureSchema` por migrations versionadas
 - [ ] Modularizar `apps/api/src/server.ts` por dominio
 - [ ] Padronizar erros de API e validacao de input por rota
-- [ ] Criar smoke tests E2E do fluxo principal (`/app/login` -> dashboard)
+- [x] Criar smoke tests E2E do fluxo principal (`/app/login` -> dashboard)
 
 ### P1 - Confiabilidade operacional
 
