@@ -206,6 +206,14 @@ type DoraOverview = {
   };
 };
 
+type IntegrationUiState =
+  | "DISCONNECTED"
+  | "CONNECTED_NO_REPOS"
+  | "READY_TO_SYNC"
+  | "SYNCING"
+  | "SYNCED_NO_DATA"
+  | "SYNCED_WITH_DATA";
+
 function AppDashboardPage() {
   const locale = detectLocale();
   const isPt = locale === "pt-BR";
@@ -649,9 +657,33 @@ function AppDashboardPage() {
   ] as const;
   const hasIntegrationData = Boolean(data?.integration.connected);
   const hasPullRequestData = pullRequests.length > 0;
-  const showProductivityEmpty = !hasIntegrationData || !hasPullRequestData;
-  const canRunSync = Boolean(data?.integration.connected) && selectedCount > 0;
+  const syncStatus = syncProgress?.status ?? data?.sync?.status ?? onboarding?.syncStatus ?? null;
+  const syncTotalPrs = syncProgress?.totalPrs ?? data?.sync?.total_prs ?? 0;
+  const connected = Boolean(data?.integration.connected);
+  const selectedRepositories = data?.integration.selectedRepositories ?? selectedCount;
+  const integrationUiState: IntegrationUiState = !connected
+    ? "DISCONNECTED"
+    : syncStatus === "pending" || syncStatus === "running"
+      ? "SYNCING"
+      : selectedRepositories === 0
+        ? "CONNECTED_NO_REPOS"
+        : syncStatus === "completed" && syncTotalPrs > 0
+          ? "SYNCED_WITH_DATA"
+          : syncStatus === "completed" && syncTotalPrs === 0
+            ? "SYNCED_NO_DATA"
+            : "READY_TO_SYNC";
+
+  const showProductivityEmpty = integrationUiState === "DISCONNECTED" || integrationUiState === "SYNCED_NO_DATA";
+  const canRunSync = connected && selectedRepositories > 0;
   const latestSyncError = syncProgress?.errorMessage ?? data?.sync?.error_message ?? null;
+
+  const primaryAction = integrationUiState === "DISCONNECTED"
+    ? { label: "Connect GitHub App", onClick: connectGitHubApp, disabled: false }
+    : integrationUiState === "CONNECTED_NO_REPOS"
+      ? { label: "Select repositories", onClick: () => setSection("repositories"), disabled: false }
+      : integrationUiState === "SYNCING"
+        ? { label: "Sync in progress", onClick: () => undefined, disabled: true }
+        : { label: "Run initial sync", onClick: syncNow, disabled: !canRunSync };
 
   const demoRows: PullRequestItem[] = [
     {
@@ -797,15 +829,12 @@ function AppDashboardPage() {
                     : `Onboarding: step ${onboardingStep}/5. Connect and configure to generate your first real metrics.`}
                 </p>
                 <div className="flex gap-2">
-                  {!data?.integration.connected ? (
-                    <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
-                  ) : null}
                   <button
-                    onClick={syncNow}
-                    disabled={!canRunSync}
+                    onClick={primaryAction.onClick}
+                    disabled={primaryAction.disabled}
                     className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Run initial sync
+                    {primaryAction.label}
                   </button>
                 </div>
               </div>
@@ -870,15 +899,19 @@ function AppDashboardPage() {
                   <li>5. Review first productivity and DORA insights</li>
                 </ul>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  {!data?.integration.connected ? (
-                    <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-emerald-300">Connect GitHub App</button>
-                  ) : null}
                   <button
-                    onClick={syncNow}
-                    disabled={!canRunSync}
+                    onClick={primaryAction.onClick}
+                    disabled={primaryAction.disabled}
+                    className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {primaryAction.label}
+                  </button>
+                  <button
+                    onClick={() => setSection("repositories")}
+                    disabled={!connected}
                     className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Run initial sync
+                    Manage repositories
                   </button>
                   <button onClick={() => setDemoMode(true)} className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800">View sample dashboard</button>
                 </div>
@@ -892,28 +925,22 @@ function AppDashboardPage() {
                   <p className="text-sm text-slate-400">{data?.integration.connected ? "Connected" : "Not connected"} • Last sync {formatSyncTime(data?.sync?.finished_at ?? data?.sync?.started_at ?? null)}</p>
                 </div>
                 <div className="flex gap-2">
-                  {!data?.integration.connected ? (
-                    <button onClick={connectGitHubApp} className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900">Connect GitHub App</button>
-                  ) : (
-                    <>
-                      <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Manage repositories</button>
-                      <button onClick={syncNow} className="rounded-lg border border-slate-700 px-3 py-2 text-sm">Run sync</button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const logs = await loadIntegrationLogs();
-                            setIntegrationLogs(logs);
-                            setShowIntegrationLogs(true);
-                          } catch (logError) {
-                            setError(logError instanceof Error ? logError.message : "Unknown error");
-                          }
-                        }}
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm"
-                      >
-                        View integration logs
-                      </button>
-                    </>
-                  )}
+                  <button onClick={() => setSection("repositories")} disabled={!connected} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">Manage repositories</button>
+                  <button onClick={syncNow} disabled={!canRunSync || integrationUiState === "SYNCING"} className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">Run sync</button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const logs = await loadIntegrationLogs();
+                        setIntegrationLogs(logs);
+                        setShowIntegrationLogs(true);
+                      } catch (logError) {
+                        setError(logError instanceof Error ? logError.message : "Unknown error");
+                      }
+                    }}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-sm"
+                  >
+                    View integration logs
+                  </button>
                 </div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -1040,7 +1067,45 @@ function AppDashboardPage() {
               </section>
             )}
 
-            {(section === "repositories" || section === "teams" || section === "dashboard" || section === "integrations") && (
+            {section === "repositories" && (
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Repositories</h3>
+                    <p className="mt-2 text-sm text-slate-400">Select repositories included in sync and metrics.</p>
+                  </div>
+                  <button
+                    onClick={saveRepositoriesAndSync}
+                    disabled={!connected || savingRepos}
+                    className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingRepos ? "Saving..." : "Save selection"}
+                  </button>
+                </div>
+
+                {!connected ? (
+                  <p className="mt-4 text-sm text-slate-400">Connect GitHub App first to load repositories.</p>
+                ) : repositories.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-400">No repositories loaded yet. Open Integrations and run repository discovery.</p>
+                ) : (
+                  <div className="mt-4 grid gap-2">
+                    {repositories.map((repository) => (
+                      <label key={repository.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm">
+                        <span className="text-slate-200">{repository.full_name}</span>
+                        <input
+                          type="checkbox"
+                          checked={repository.selected}
+                          onChange={() => toggleRepository(repository.id)}
+                          className="h-4 w-4"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {(section === "teams" || section === "dashboard" || section === "integrations") && (
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
                 <h3 className="text-lg font-semibold text-white">{activeSectionTitle}</h3>
                 <p className="mt-2 text-sm text-slate-400">{isPt ? "Seção em evolução. Vamos detalhar esse módulo nas próximas iterações." : "This section is evolving. We will expand this module in the next iterations."}</p>
