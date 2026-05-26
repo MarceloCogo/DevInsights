@@ -32,6 +32,32 @@ const createInstallationClient = async (installationId: number) => {
   return octokit as unknown as Octokit;
 };
 
+const paginateWithRequest = async <T>(
+  octokit: Octokit,
+  route: string,
+  baseParams: Record<string, unknown>,
+  readItems: (data: any) => T[]
+) => {
+  const items: T[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await octokit.request(route, {
+      ...baseParams,
+      per_page: 100,
+      page
+    });
+    const batch = readItems(response.data);
+    items.push(...batch);
+    if (batch.length < 100) {
+      break;
+    }
+    page += 1;
+  }
+
+  return items;
+};
+
 const syncWorkflowRuns = async (
   octokit: Octokit,
   organizationId: number,
@@ -40,11 +66,12 @@ const syncWorkflowRuns = async (
   const [owner, repo] = repositoryFullName.split("/");
   if (!owner || !repo) return;
 
-  const runs = await octokit.paginate(octokit.rest.actions.listWorkflowRunsForRepo, {
-    owner,
-    repo,
-    per_page: 50
-  });
+  const runs = await paginateWithRequest(
+    octokit,
+    "GET /repos/{owner}/{repo}/actions/runs",
+    { owner, repo },
+    (data) => (data.workflow_runs ?? []) as Array<any>
+  );
 
   for (const run of runs as Array<{
     id: number;
@@ -98,13 +125,14 @@ const syncDeployments = async (
   const [owner, repo] = repositoryFullName.split("/");
   if (!owner || !repo) return;
 
-  const deploymentResponse = await octokit.rest.repos.listDeployments({
-    owner,
-    repo,
-    per_page: 30
-  });
+  const deployments = await paginateWithRequest(
+    octokit,
+    "GET /repos/{owner}/{repo}/deployments",
+    { owner, repo },
+    (data) => data as Array<any>
+  );
 
-  for (const deployment of deploymentResponse.data as Array<{
+  for (const deployment of deployments as Array<{
     id: number;
     environment?: string;
     created_at?: string;
@@ -113,13 +141,13 @@ const syncDeployments = async (
     let deployedAt = deployment.created_at ?? null;
 
     try {
-      const statuses = await octokit.rest.repos.listDeploymentStatuses({
+      const statuses = await octokit.request("GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses", {
         owner,
         repo,
         deployment_id: deployment.id,
         per_page: 1
       });
-      const latestStatus = statuses.data[0];
+      const latestStatus = statuses.data[0] as { state?: string; updated_at?: string; created_at?: string } | undefined;
       if (latestStatus) {
         state = latestStatus.state ?? null;
         deployedAt = latestStatus.updated_at ?? latestStatus.created_at ?? deployedAt;
@@ -190,12 +218,16 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
       continue;
     }
 
-    const pulls = (await octokit.paginate(octokit.rest.pulls.list, {
-      owner,
-      repo,
-      state: "all",
-      per_page: 100
-    })) as Array<{
+    const pulls = (await paginateWithRequest(
+      octokit,
+      "GET /repos/{owner}/{repo}/pulls",
+      {
+        owner,
+        repo,
+        state: "all"
+      },
+      (data) => data as Array<any>
+    )) as Array<{
       id: number;
       number: number;
       title: string;

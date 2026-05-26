@@ -123,14 +123,28 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
 
     try {
       const octokit = await createInstallationClient(Number(installation.installation_id));
-      const payload = await octokit.paginate(octokit.rest.apps.listReposAccessibleToInstallation, { per_page: 100 });
-      for (const repository of payload as Array<{ id: number; full_name: string; private: boolean }>) {
+      const repositories: Array<{ id: number; full_name: string; private: boolean }> = [];
+      let page = 1;
+      while (true) {
+        const response = await octokit.request("GET /installation/repositories", {
+          per_page: 100,
+          page
+        });
+        const currentPage = (response.data.repositories ?? []) as Array<{ id: number; full_name: string; private: boolean }>;
+        repositories.push(...currentPage);
+        if (currentPage.length < 100) {
+          break;
+        }
+        page += 1;
+      }
+
+      for (const repository of repositories) {
         await db.query(`insert into tracked_repositories (organization_id, repository_id, full_name, private) values ($1, $2, $3, $4) on conflict (organization_id, repository_id) do update set full_name = excluded.full_name, private = excluded.private, updated_at = now()`, [organizationId, repository.id, repository.full_name, repository.private]);
       }
       const savedRepositories = await db.query(`select repository_id as id, full_name, private, selected from tracked_repositories where organization_id = $1 order by full_name asc`, [organizationId]);
       return { connected: true, repositories: savedRepositories.rows };
     } catch (error) {
-      app.log.error(error);
+      app.log.error({ error, organizationId, installationId: installation.installation_id, githubLogin: session.user.github_login }, "repositories sync failed");
       return reply.code(500).send({ error: "repositories_sync_failed" });
     }
   });
