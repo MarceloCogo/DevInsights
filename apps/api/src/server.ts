@@ -4,6 +4,7 @@ import FastifyHelmet from "@fastify/helmet";
 import FastifyRateLimit from "@fastify/rate-limit";
 import { App as GitHubApp } from "@octokit/app";
 import { Octokit } from "@octokit/rest";
+import { existsSync } from "node:fs";
 import { Pool } from "pg";
 import { createHmac, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -44,7 +45,11 @@ const hasDatabase = Boolean(databaseUrl);
 const pool = hasDatabase ? new Pool({ connectionString: databaseUrl }) : null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDistPath = join(__dirname, "../../web/dist");
-const migrationsPath = join(__dirname, "./storage/migrations");
+const migrationsPathCandidates = [
+  join(__dirname, "./storage/migrations"),
+  join(__dirname, "../src/storage/migrations")
+];
+const migrationsPath = migrationsPathCandidates.find((candidate) => existsSync(candidate)) ?? migrationsPathCandidates[0];
 
 const normalizeBaseUrl = (value: string) => {
   const trimmed = value.trim().replace(/\/$/, "");
