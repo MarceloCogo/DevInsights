@@ -22,12 +22,22 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
 
   const ensureInstallationLinked = async (organizationId: number, githubLogin: string) => {
     const db = getPool();
+    const preferenceResult = await db.query(
+      `select auto_reconcile_enabled from integration_preferences where organization_id = $1 limit 1`,
+      [organizationId]
+    );
+    const autoReconcileEnabled = (preferenceResult.rows[0]?.auto_reconcile_enabled as boolean | undefined) ?? true;
+
     const current = await db.query(
       `select installation_id, account_login, account_type from github_installations where organization_id = $1 limit 1`,
       [organizationId]
     );
     if ((current.rowCount ?? 0) > 0) {
       return current.rows[0];
+    }
+
+    if (!autoReconcileEnabled) {
+      return null;
     }
 
     const resolvedInstallationId = await resolveInstallationIdForAccount(githubLogin);
@@ -55,6 +65,13 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     if (!githubAppName) return reply.code(500).send({ error: "missing_github_app_name" });
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
+    await getPool().query(
+      `insert into integration_preferences (organization_id, auto_reconcile_enabled, updated_at)
+       values ($1, true, now())
+       on conflict (organization_id)
+       do update set auto_reconcile_enabled = true, updated_at = now()`,
+      [organizationId]
+    );
     const state = await createAuthState("installation", organizationId);
     return { installUrl: `https://github.com/apps/${githubAppName}/installations/new?state=${encodeURIComponent(state)}` };
   });
@@ -69,6 +86,13 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     const installationState = await consumeAuthState(state, "installation");
     app.log.info({ stateValid: installationState.ok, stateOrganizationId: installationState.organizationId ?? null }, "github installation callback state resolution");
     if (installationState.ok && installationState.organizationId) {
+      await db.query(
+        `insert into integration_preferences (organization_id, auto_reconcile_enabled, updated_at)
+         values ($1, true, now())
+         on conflict (organization_id)
+         do update set auto_reconcile_enabled = true, updated_at = now()`,
+        [installationState.organizationId]
+      );
       await db.query(
         `insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
          values ($1, $2, null, null, null)
@@ -100,6 +124,13 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     }
     const organizationId = await getOrganizationIdForUser(session.user.id, (installationState.ok ? installationState.organizationId : null) ?? session.activeOrganizationId);
     if (!organizationId) return reply.redirect(`${getWebBaseUrl(request)}/app?error=missing_organization`);
+    await db.query(
+      `insert into integration_preferences (organization_id, auto_reconcile_enabled, updated_at)
+       values ($1, true, now())
+       on conflict (organization_id)
+       do update set auto_reconcile_enabled = true, updated_at = now()`,
+      [organizationId]
+    );
     await db.query(`insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id) values ($1, $2, null, null, $3) on conflict (organization_id) do update set installation_id = excluded.installation_id, installed_by_user_id = excluded.installed_by_user_id, updated_at = now()`, [organizationId, Number(installationId), session.user.id]);
     reply.clearCookie("devinsights.pending_installation_id", {
       path: "/",
@@ -225,6 +256,13 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
     await db.query(`delete from github_installations where organization_id = $1`, [organizationId]);
     await db.query(`update tracked_repositories set selected = false where organization_id = $1`, [organizationId]);
+    await db.query(
+      `insert into integration_preferences (organization_id, auto_reconcile_enabled, updated_at)
+       values ($1, false, now())
+       on conflict (organization_id)
+       do update set auto_reconcile_enabled = false, updated_at = now()`,
+      [organizationId]
+    );
     return { ok: true, status: "disconnected" };
   });
 

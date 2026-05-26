@@ -6,9 +6,19 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
 
   const ensureInstallationLinked = async (organizationId: number, githubLogin: string) => {
     const db = getPool();
+    const preferenceResult = await db.query(
+      `select auto_reconcile_enabled from integration_preferences where organization_id = $1 limit 1`,
+      [organizationId]
+    );
+    const autoReconcileEnabled = (preferenceResult.rows[0]?.auto_reconcile_enabled as boolean | undefined) ?? true;
+
     const current = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
     if ((current.rowCount ?? 0) > 0) {
       return current.rows[0].installation_id as number;
+    }
+
+    if (!autoReconcileEnabled) {
+      return null;
     }
 
     const resolvedInstallationId = await resolveInstallationIdForAccount(githubLogin);

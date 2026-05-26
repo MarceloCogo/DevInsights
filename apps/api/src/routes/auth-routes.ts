@@ -89,6 +89,13 @@ export const registerAuthRoutes = (app: FastifyInstance, deps: RouteDeps) => {
       const pendingInstallationId = Number(pendingInstallationIdRaw);
       if (pendingInstallationIdRaw && Number.isFinite(pendingInstallationId) && pendingInstallationId > 0) {
         await db.query(
+          `insert into integration_preferences (organization_id, auto_reconcile_enabled, updated_at)
+           values ($1, true, now())
+           on conflict (organization_id)
+           do update set auto_reconcile_enabled = true, updated_at = now()`,
+          [activeOrganizationId]
+        );
+        await db.query(
           `insert into github_installations (organization_id, installation_id, account_login, account_type, installed_by_user_id)
            values ($1, $2, null, null, $3)
            on conflict (organization_id)
