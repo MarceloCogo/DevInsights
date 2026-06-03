@@ -1,4 +1,7 @@
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
+import { parseBody } from "../lib/validate.js";
+import { sendValidationError } from "../lib/errors.js";
 import type { RouteDeps } from "./types.js";
 
 export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps) => {
@@ -51,14 +54,18 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
     return { organizations: organizations.rows, activeOrganizationId };
   });
 
+  const setActiveOrgSchema = z.object({
+    organizationId: z.number().int().positive(),
+  });
+
   app.post(`${apiBasePath}/organizations/active`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
     const db = getPool();
     const session = await getSessionUser(request.cookies[sessionCookieName]);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
-    const body = request.body as { organizationId?: number };
-    const organizationId = Number(body.organizationId);
-    if (!organizationId) return reply.code(400).send({ error: "invalid_organization_id" });
+    const parsed = parseBody(setActiveOrgSchema, request.body);
+    if (!parsed.success) return sendValidationError(reply, parsed.details);
+    const organizationId = parsed.data.organizationId;
     const membership = await db.query(
       `select organization_id from organization_members where user_id = $1 and organization_id = $2 limit 1`,
       [session.user.id, organizationId]

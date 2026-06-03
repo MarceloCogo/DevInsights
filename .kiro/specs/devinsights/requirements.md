@@ -1,84 +1,102 @@
-# DevInsights — Requirements (MVP Atual)
+# Requirements Document
 
-## 1. Objetivo do produto
+## Introduction
 
-DevInsights e uma plataforma open source, self-hosted, para visibilidade de fluxo de Pull Requests.
+DevInsights is an open source, self-hosted platform for Pull Request flow visibility. The current focus is delivering simple GitHub onboarding and a useful operational dashboard for continuous improvement, without individual surveillance.
 
-O foco atual e entregar um onboarding GitHub simples e um dashboard operacional util para melhoria continua, sem vigilancia individual.
+## Requirements
 
-## 2. Escopo funcional atual
+### Requirement 1: Authentication
 
-### RF-01 Autenticacao
+**User Story:** As a developer, I want to log in with my GitHub account so that I can access the dashboard securely.
 
-- Login via OAuth GitHub.
-- Sessao por cookie HttpOnly.
-- Logout.
+#### Acceptance Criteria
+- [ ] User can login via OAuth GitHub
+- [ ] Session is managed via HttpOnly cookie
+- [ ] User can logout and session is destroyed
 
-### RF-02 Organizacoes
+### Requirement 2: Organizations
 
-- Cada usuario pertence a uma ou mais organizacoes.
-- Usuario pode trocar organizacao ativa.
-- Isolamento de dados por organizacao.
+**User Story:** As a team lead, I want to manage organizations so that data is isolated per team.
 
-### RF-03 Integracao GitHub App
+#### Acceptance Criteria
+- [ ] User belongs to one or more organizations
+- [ ] User can switch active organization
+- [ ] Data is isolated per organization
 
-- Gerar URL de instalacao do GitHub App.
-- Processar callback de instalacao.
-- Salvar `installation_id` por organizacao.
-- Exibir status de conexao/desconexao.
+### Requirement 3: GitHub App Integration
 
-### RF-04 Repositorios
+**User Story:** As an admin, I want to connect a GitHub App so that repositories can be monitored.
 
-- Listar repositorios autorizados pela instalacao.
-- Selecionar repositorios monitorados.
-- Persistir selecao por organizacao.
+#### Acceptance Criteria
+- [ ] System generates GitHub App installation URL
+- [ ] Installation callback is processed correctly
+- [ ] installation_id is saved per organization
+- [ ] Connection and disconnection status is displayed
 
-### RF-05 Sincronizacao
+### Requirement 4: Repositories
 
-- API cria job de sync em `integration_sync_jobs`.
-- Worker consome jobs pendentes e sincroniza PRs.
-- Status de job: `pending`, `running`, `completed`, `failed`.
-- Sync idempotente por chave de PR (`organization_id`, `repository_id`, `github_pr_id`).
+**User Story:** As a user, I want to select which repositories to monitor so that only relevant data is synced.
 
-### RF-06 Dashboard `/app`
+#### Acceptance Criteria
+- [ ] Repositories authorized by installation are listed
+- [ ] User can select monitored repositories
+- [ ] Selection is persisted per organization
 
-- Layout completo com secoes: `overview`, `pr`, `integrations`, `settings`.
-- Cards de metricas de PR.
-- Tabela de PRs com filtros (`period`, `state`, `repository`).
-- Acoes de sync e status de integracao.
+### Requirement 5: Synchronization
 
-## 3. Requisitos nao-funcionais
+**User Story:** As a user, I want PR data to sync automatically so that the dashboard shows current information.
 
-### RNF-01 Seguranca
+#### Acceptance Criteria
+- [ ] API creates sync job in integration_sync_jobs
+- [ ] Worker consumes pending jobs and syncs PRs
+- [ ] Job status lifecycle works: pending, running, completed, failed
+- [ ] Sync is idempotent by PR key (organization_id, repository_id, github_pr_id)
 
-- Headers de seguranca em API e web.
-- Cookies com politica segura por ambiente.
-- CORS restrito ao `WEB_BASE_URL`.
-- Rate limit em rota sensivel de auth.
+### Requirement 6: Dashboard
 
-### RNF-02 Operacao
+**User Story:** As a developer, I want a comprehensive dashboard so that I can understand PR flow and identify risks.
 
-- Execucao local com Docker Compose.
-- Execucao em 3 servicos no Railway: `web`, `api`, `worker`.
-- Health checks em `api` e `worker`.
+#### Acceptance Criteria
+- [ ] Complete layout with sections: overview, pr, integrations, settings
+- [ ] PR metric cards are displayed
+- [ ] PR table supports filters (period, state, repository)
+- [ ] Sync actions and integration status are accessible
+- [ ] PR risk signals (stale, large, long-lived) are displayed with visual indicators
+- [ ] Sync/jobs history page is available with pagination
+- [ ] Consistent empty, error, and loading states across all sections
 
-### RNF-03 Performance
+### Requirement 7: Security
 
-- Requests de dashboard devem ser leves e orientados a leitura.
-- Sync pesado nao pode bloquear request HTTP.
+**User Story:** As a platform operator, I want security hardening so that the application is protected against common attacks.
 
-## 4. Fora do escopo atual
+#### Acceptance Criteria
+- [ ] Security headers are set on API and web responses
+- [ ] Cookie policy is secure per environment
+- [ ] CORS is restricted to WEB_BASE_URL
+- [ ] Rate limiting is applied on sensitive auth routes
 
-- Azure DevOps runtime.
-- DORA completo.
-- AI Impact completo.
-- Webhooks GitHub em producao.
-- Billing/freemium.
-- Ranking individual de dev.
+### Requirement 8: Operations
 
-## 5. Criterios de aceite do MVP atual
+**User Story:** As a DevOps engineer, I want reliable deployment options so that the platform runs consistently.
 
-- Usuario conclui fluxo completo: login -> install app -> selecionar repos -> sync -> dashboard.
-- Dashboard carrega com dados reais de PR apos sync.
-- Troca de organizacao ativa atualiza os dados exibidos.
-- API e worker mantem operacao estavel com jobs concorrentes basicos.
+#### Acceptance Criteria
+- [ ] Application runs locally with Docker Compose
+- [ ] 3-service deployment works on Railway: web, api, worker
+- [ ] Health checks are available on api and worker
+
+### Requirement 9: Performance
+
+**User Story:** As a user, I want fast dashboard responses so that my workflow is not interrupted.
+
+#### Acceptance Criteria
+- [ ] Dashboard requests are lightweight and read-oriented
+- [ ] Heavy sync does not block HTTP requests
+
+## Glossary
+
+- PR: Pull Request
+- DORA: DevOps Research and Assessment metrics
+- Stale PR: A PR open for more than 7 days without updates
+- Large PR: A PR with more than 500 lines of additions+deletions
+- Long-lived PR: A PR open for more than 14 days

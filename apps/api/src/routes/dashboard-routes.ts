@@ -1,4 +1,7 @@
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
+import { parseQuery } from "../lib/validate.js";
+import { sendValidationError } from "../lib/errors.js";
 import type { RouteDeps } from "./types.js";
 
 export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) => {
@@ -30,6 +33,12 @@ export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) =
     };
   });
 
+  const pullRequestsQuerySchema = z.object({
+    state: z.enum(["open", "closed", "all"]).optional(),
+    repository: z.string().max(200).optional(),
+    period: z.enum(["7d", "30d"]).optional(),
+  });
+
   app.get(`${apiBasePath}/dashboard/pull-requests`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
     const db = getPool();
@@ -37,7 +46,9 @@ export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) =
     if (!session) return reply.code(401).send({ error: "unauthorized" });
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
-    const query = request.query as { state?: string; repository?: string; period?: "7d" | "30d" };
+    const parsed = parseQuery(pullRequestsQuerySchema, request.query);
+    if (!parsed.success) return sendValidationError(reply, parsed.details);
+    const query = parsed.data;
     const conditions: string[] = ["organization_id = $1"];
     const values: unknown[] = [organizationId];
     if (query.state && ["open", "closed", "all"].includes(query.state) && query.state !== "all") {

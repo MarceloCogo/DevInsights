@@ -353,9 +353,26 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
   };
 };
 
-const processJob = async (jobId: number, organizationId: number) => {
+const MAX_ATTEMPTS = 5;
+
+const log = (level: "info" | "warn" | "error", message: string, context?: Record<string, unknown>) => {
+  const entry = { timestamp: new Date().toISOString(), level, service: "worker", message, ...context };
+  if (level === "error") console.error(JSON.stringify(entry));
+  else if (level === "warn") console.warn(JSON.stringify(entry));
+  else console.log(JSON.stringify(entry));
+};
+
+const calculateBackoffMs = (attempts: number): number => {
+  // Exponential backoff: 10s, 30s, 90s, 270s, 810s
+  return Math.min(10_000 * Math.pow(3, attempts), 15 * 60 * 1000);
+};
+
+const processJob = async (jobId: number, organizationId: number, attempts: number) => {
   try {
-    await pool.query(`update integration_sync_jobs set phase = 'discovering', updated_at = now() where id = $1`, [jobId]);
+    await pool.query(
+      `update integration_sync_jobs set phase = 'discovering', attempts = $1, updated_at = now() where id = $2`,
+      [attempts + 1, jobId]
+    );
     const result = await runInitialSync(organizationId, jobId);
     await pool.query(
       `
@@ -367,15 +384,31 @@ const processJob = async (jobId: number, organizationId: number) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "sync_failed";
-    await pool.query(
-      `
-        update integration_sync_jobs
-        set status = 'failed', phase = 'failed', error_message = $1, finished_at = now(), updated_at = now()
-        where id = $2
-      `,
-      [message, jobId]
-    );
-    console.error("sync job failed", { jobId, organizationId, message });
+    const currentAttempts = attempts + 1;
+
+    if (currentAttempts < MAX_ATTEMPTS) {
+      const backoffMs = calculateBackoffMs(currentAttempts);
+      const nextRetryAt = new Date(Date.now() + backoffMs).toISOString();
+      await pool.query(
+        `
+          update integration_sync_jobs
+          set status = 'pending', phase = 'retry_scheduled', attempts = $1, error_message = $2, next_retry_at = $3, updated_at = now()
+          where id = $4
+        `,
+        [currentAttempts, message, nextRetryAt, jobId]
+      );
+      log("warn", "sync job scheduled for retry", { jobId, organizationId, attempts: currentAttempts, nextRetryAt });
+    } else {
+      await pool.query(
+        `
+          update integration_sync_jobs
+          set status = 'failed', phase = 'failed', attempts = $1, error_message = $2, finished_at = now(), updated_at = now()
+          where id = $3
+        `,
+        [currentAttempts, message, jobId]
+      );
+      log("error", "sync job permanently failed", { jobId, organizationId, attempts: currentAttempts, errorMessage: message });
+    }
   }
 };
 
@@ -385,9 +418,10 @@ const pickPendingJobs = async () => {
     await client.query("begin");
     const result = await client.query(
       `
-        select id, organization_id
+        select id, organization_id, attempts
         from integration_sync_jobs
         where status = 'pending'
+          and (next_retry_at is null or next_retry_at <= now())
         order by created_at asc
         limit $1
         for update skip locked
@@ -395,7 +429,7 @@ const pickPendingJobs = async () => {
       [maxJobsPerCycle]
     );
 
-    const jobs = result.rows as Array<{ id: number; organization_id: number }>;
+    const jobs = result.rows as Array<{ id: number; organization_id: number; attempts: number }>;
     for (const job of jobs) {
       await client.query(
         `update integration_sync_jobs set status = 'running', phase = 'pending', updated_at = now() where id = $1`,
@@ -421,16 +455,37 @@ const runLoop = async () => {
   heartbeat = new Date().toISOString();
 
   try {
+    // Periodically clean up old jobs (every 100 loops ~= every ~8 minutes at 5s interval)
+    if (Math.random() < 0.01) {
+      await cleanupExpiredJobs();
+    }
+
     const jobs = await pickPendingJobs();
     for (const job of jobs) {
-      await processJob(Number(job.id), Number(job.organization_id));
+      await processJob(Number(job.id), Number(job.organization_id), Number(job.attempts ?? 0));
     }
   } catch (error) {
-    console.error("worker loop failed", error);
+    log("error", "worker loop failed", { error: error instanceof Error ? error.message : String(error) });
   } finally {
     setTimeout(() => {
       void runLoop();
     }, pollIntervalMs);
+  }
+};
+
+const cleanupExpiredJobs = async () => {
+  try {
+    const result = await pool.query(
+      `delete from integration_sync_jobs
+       where status in ('completed', 'failed')
+         and finished_at is not null
+         and finished_at < now() - interval '30 days'`
+    );
+    if ((result.rowCount ?? 0) > 0) {
+      log("info", "cleaned up expired sync jobs", { deleted: result.rowCount });
+    }
+  } catch (error) {
+    log("error", "cleanup failed", { error: error instanceof Error ? error.message : String(error) });
   }
 };
 
@@ -453,13 +508,13 @@ const server = createServer((req, res) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`worker listening on ${port}`);
+  log("info", `worker listening on ${port}`);
   void runLoop();
 });
 
 const shutdown = async (signal: NodeJS.Signals) => {
   shuttingDown = true;
-  console.log(`shutting down worker (${signal})`);
+  log("info", `shutting down worker`, { signal });
   server.close(async () => {
     await pool.end();
     process.exit(0);

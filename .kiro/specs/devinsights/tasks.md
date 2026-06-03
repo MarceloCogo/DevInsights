@@ -1,41 +1,36 @@
-# DevInsights — Implementation Tasks
+# Implementation Plan
 
-## Status geral
+## Overview
 
-- [x] Monorepo com `apps/web`, `apps/api`, `apps/worker` e `packages/*`
-- [x] OAuth GitHub com sessao por cookie
-- [x] Onboarding GitHub App (install URL + callback)
-- [x] Selecao de repositorios monitorados
-- [x] Dashboard `/app` completo com secoes e filtros
-- [x] API de overview e lista de PRs
-- [x] Worker consumindo jobs em Postgres
-- [x] Hardening inicial de seguranca (headers, cookie policy, CORS, rate limit)
+Remaining P2 product tasks for DevInsights.
 
-## Backlog curto (prioridade)
+## Tasks
 
-### P0 - Fundacao para escalar sem gambiarra
+- [ ] 1. Update the pull-requests endpoint to include risk signals
+- [ ] 2. Refactor frontend signalTag function to use API risk signals data
+- [ ] 3. Add color-coded badge components for risk signals
+- [ ] 4. Add risk signal summary in dashboard overview
+- [ ] 5. Add paginated jobs API endpoint
+- [ ] 6. Create SyncHistorySection React component
+- [ ] 7. Wire sync history into dashboard navigation
+- [ ] 8. Add retry button for failed jobs
+- [ ] 9. Create reusable LoadingState EmptyState ErrorState components
+- [ ] 10. Replace inline loading and empty states with new components
+- [ ] 11. Replace inline error handling with ErrorState component
+- [ ] 12. Add transition animations for state changes
 
-- [x] Substituir `ensureSchema` por migrations versionadas
-- [ ] Modularizar `apps/api/src/server.ts` por dominio
-- [ ] Padronizar erros de API e validacao de input por rota
-- [x] Criar smoke tests E2E do fluxo principal (`/app/login` -> dashboard)
+## Task Dependency Graph
 
-### P1 - Confiabilidade operacional
+```json
+{
+  "waves": [
+    ["1", "2", "3", "4", "5", "6", "7", "8"],
+    ["9", "10", "11", "12"]
+  ]
+}
+```
 
-- [ ] Adicionar retries e backoff no worker
-- [ ] Adicionar idempotencia e deduplicacao de jobs
-- [ ] Melhorar observabilidade (request_id, org_id, job_id)
-- [ ] Criar politica de retention para jobs e snapshots
+## Notes
 
-### P2 - Produto
-
-- [ ] Evoluir painel PR com sinais de risco mais robustos
-- [ ] Adicionar pagina de historico de sync/jobs
-- [ ] Melhorar empty/error/loading states com consistencia visual
-
-## Fora de escopo imediato
-
-- Azure DevOps runtime
-- DORA completo
-- AI Impact completo
-- Billing/freemium
+- Web app is in apps/web/src/main.tsx
+- API routes are in apps/api/src/routes/
