@@ -20,3 +20,122 @@ a,
 button {
   transition: all 0.2s ease;
 }
+
+/* ============================================================================
+   Animations and Transitions
+   @see Requirements 10.1, 10.2, 10.3, 10.5
+   ============================================================================ */
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+/* Scale in animation for modals */
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+/* Shimmer animation for skeletons */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Value highlight animation */
+@keyframes value-highlight {
+  0% {
+    background-color: rgba(34, 184, 240, 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-value-highlight {
+  animation: value-highlight 1s ease-out;
+}
+
+/* Section transitions */
+.section-transition {
+  @apply transition-opacity duration-200 ease-in-out;
+}
+
+.section-enter {
+  @apply opacity-0;
+}
+
+.section-enter-active {
+  @apply opacity-100;
+}
+
+.section-exit {
+  @apply opacity-100;
+}
+
+.section-exit-active {
+  @apply opacity-0;
+}
+
+/* ============================================================================
+   Reduced Motion Preferences
+   @see Requirements 10.5, 10.6
+   ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pulse,
+  .animate-shimmer {
+    animation: none !important;
+  }
+
+  .animate-fade-in,
+  .animate-scale-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
