@@ -16,6 +16,7 @@ import { Card } from "./components/ui/Card";
 import { Button } from "./components/ui/Button";
 import { Badge } from "./components/ui/Badge";
 import { RiskSignalBadge } from "./components/risk-signals/RiskSignalBadge";
+import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 // Types
 import type { Locale, Section } from "./types/store";
@@ -103,6 +104,7 @@ function AppDashboardPage() {
   const [overview, setOverview] = React.useState<DashboardOverview | null>(null);
   const [pullRequests, setPullRequests] = React.useState<PullRequest[]>([]);
   const [dora, setDora] = React.useState<DoraOverview | null>(null);
+  const [doraTimeseries, setDoraTimeseries] = React.useState<any>(null);
   const [onboarding, setOnboarding] = React.useState<OnboardingStatus | null>(null);
   const [repoFilter, setRepoFilter] = React.useState("all");
   const [stateFilter, setStateFilter] = React.useState("all");
@@ -187,6 +189,12 @@ function AppDashboardPage() {
     return (await response.json()) as DoraOverview;
   }, [apiBaseUrl]);
 
+  const loadDoraTimeseries = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/dashboard/dora-timeseries?period=90d`, { credentials: "include" });
+    if (!response.ok) return null;
+    return await response.json();
+  }, [apiBaseUrl]);
+
   const loadOnboardingStatus = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/onboarding/status`, { credentials: "include" });
     if (!response.ok) throw new Error("Failed to load onboarding status");
@@ -224,6 +232,7 @@ function AppDashboardPage() {
         setOnboarding(await loadOnboardingStatus());
         setSyncProgress(await loadSyncProgress());
         setDora(await loadDoraOverview());
+        setDoraTimeseries(await loadDoraTimeseries());
       } catch (e) {
         setAppError(e instanceof Error ? e.message : "Unknown error");
       } finally {
@@ -460,14 +469,128 @@ function AppDashboardPage() {
 
             {/* DORA Metrics */}
             {section === "metrics" && dora && (
-              <Card title="DORA Metrics" className="rounded-2xl border border-slate-800 bg-slate-900">
-                <div className="mt-4 grid gap-3 md:grid-cols-4">
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Status</p><p className="mt-1 font-semibold text-white">{dora.status}</p></div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Deploy Freq (30d)</p><p className="mt-1 font-semibold text-white">{dora.deploymentFrequency30d}</p></div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">Lead Time</p><p className="mt-1 font-semibold text-white">{dora.leadTimeForChangesHours ?? "pending"}</p></div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p className="text-xs text-slate-400">MTTR</p><p className="mt-1 font-semibold text-white">{dora.mttrHours ?? "pending"}</p></div>
+              <div className="space-y-6">
+                {/* DORA Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-white">DORA Metrics</h2>
+                    <p className="text-sm text-slate-400">Last 90 days • {dora.status === "available" ? "All metrics available" : dora.status === "partial" ? "Partial data" : "Setup required"}</p>
+                  </div>
                 </div>
-              </Card>
+
+                {/* DORA Charts Grid */}
+                <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                  {/* Cycle Time Chart */}
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="text-sm font-medium text-slate-300">Cycle Time</h3>
+                      <Badge variant={dora.leadTimeForChangesHours && dora.leadTimeForChangesHours < 24 ? "success" : dora.leadTimeForChangesHours && dora.leadTimeForChangesHours < 168 ? "warning" : "default"} size="sm">
+                        {dora.leadTimeForChangesHours ? (dora.leadTimeForChangesHours < 24 ? "Elite" : dora.leadTimeForChangesHours < 168 ? "High" : "Medium") : "N/A"}
+                      </Badge>
+                    </div>
+                    <p className="text-2xl font-bold text-white mb-4">{dora.leadTimeForChangesHours ? `${Math.round(dora.leadTimeForChangesHours)}h` : "—"}</p>
+                    <div className="h-36">
+                      {doraTimeseries?.cycleTime?.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={doraTimeseries.cycleTime}>
+                            <defs><linearGradient id="cycleGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} /><stop offset="95%" stopColor="#6366f1" stopOpacity={0} /></linearGradient></defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="week" tickFormatter={(v: string) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })} tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} />
+                            <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickFormatter={(v: number) => `${v}h`} />
+                            <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: 8 }} labelFormatter={(v: any) => new Date(v).toLocaleDateString()} formatter={(v: any) => [`${Number(v).toFixed(1)}h`, "Avg Cycle Time"]} />
+                            <Area type="monotone" dataKey="avgHours" stroke="#6366f1" fill="url(#cycleGrad)" strokeWidth={2} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ) : <p className="flex items-center justify-center h-full text-sm text-slate-500">No data yet</p>}
+                    </div>
+                  </div>
+
+                  {/* Deploy Frequency Chart */}
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="text-sm font-medium text-slate-300">Deploy Frequency</h3>
+                      <Badge variant={dora.deploymentFrequency30d > 30 ? "success" : dora.deploymentFrequency30d > 4 ? "warning" : "default"} size="sm">
+                        {dora.deploymentFrequency30d > 30 ? "Elite" : dora.deploymentFrequency30d > 4 ? "High" : "Low"}
+                      </Badge>
+                    </div>
+                    <p className="text-2xl font-bold text-white mb-4">{dora.deploymentFrequency30d} <span className="text-sm font-normal text-slate-400">per month</span></p>
+                    <div className="h-36">
+                      {doraTimeseries?.deployFrequency?.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={doraTimeseries.deployFrequency}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="week" tickFormatter={(v: string) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })} tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} />
+                            <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: 8 }} labelFormatter={(v: any) => `Week of ${new Date(v).toLocaleDateString()}`} formatter={(v: any) => [v, "Deploys"]} />
+                            <Bar dataKey="deploys" fill="#22d3ee" radius={[3, 3, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : <p className="flex items-center justify-center h-full text-sm text-slate-500">No data yet</p>}
+                    </div>
+                  </div>
+
+                  {/* MTTR Chart */}
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="text-sm font-medium text-slate-300">MTTR</h3>
+                      <Badge variant={dora.mttrHours && dora.mttrHours < 1 ? "success" : dora.mttrHours && dora.mttrHours < 24 ? "info" : "default"} size="sm">
+                        {dora.mttrHours ? (dora.mttrHours < 1 ? "Elite" : dora.mttrHours < 24 ? "High" : "Medium") : "N/A"}
+                      </Badge>
+                    </div>
+                    <p className="text-2xl font-bold text-white mb-4">{dora.mttrHours ? `${dora.mttrHours < 1 ? Math.round(dora.mttrHours * 60) + "m" : Math.round(dora.mttrHours) + "h"}` : "—"} <span className="text-sm font-normal text-slate-400">mean time to restore</span></p>
+                    <div className="h-36">
+                      {doraTimeseries?.mttr?.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={doraTimeseries.mttr}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="week" tickFormatter={(v: string) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })} tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} />
+                            <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickFormatter={(v: number) => `${v}h`} />
+                            <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: 8 }} labelFormatter={(v: any) => new Date(v).toLocaleDateString()} formatter={(v: any) => [`${Number(v).toFixed(1)}h`, "MTTR"]} />
+                            <Line type="monotone" dataKey="avgHours" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 3 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : <p className="flex items-center justify-center h-full text-sm text-slate-500">No incidents recorded</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* CFR - Full width */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-medium text-slate-300">Change Failure Rate (CFR)</h3>
+                    <Badge variant={dora.changeFailureRate !== null && dora.changeFailureRate < 5 ? "success" : "default"} size="sm">
+                      {dora.changeFailureRate !== null ? `${dora.changeFailureRate}%` : "N/A"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-slate-400 mb-4">Avg change failure rate per week</p>
+                  <div className="h-40">
+                    {doraTimeseries?.cfr?.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={doraTimeseries.cfr}>
+                          <defs><linearGradient id="cfrGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} /><stop offset="95%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient></defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis dataKey="week" tickFormatter={(v: string) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })} tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} />
+                          <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
+                          <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: 8 }} labelFormatter={(v: any) => `Week of ${new Date(v).toLocaleDateString()}`} formatter={(v: any) => [`${v}%`, "Failure Rate"]} />
+                          <Area type="monotone" dataKey="rate" stroke="#f59e0b" fill="url(#cfrGrad)" strokeWidth={2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : <p className="flex items-center justify-center h-full text-sm text-slate-500">No deployment data yet</p>}
+                  </div>
+                </div>
+
+                {/* Coverage */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                  <p className="text-sm font-medium text-slate-300 mb-2">Data Coverage</p>
+                  <div className="grid gap-2 md:grid-cols-5 text-xs">
+                    <div className={`rounded-lg p-2 ${dora.coverage.productionEnvironmentsConfigured ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>Production envs: {dora.coverage.productionEnvironmentsConfigured ? "✓" : "missing"}</div>
+                    <div className={`rounded-lg p-2 ${dora.coverage.deploymentsAvailable ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>Deployments: {dora.coverage.deploymentsAvailable ? "✓" : "missing"}</div>
+                    <div className={`rounded-lg p-2 ${dora.coverage.workflowRunsAvailable ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>Workflows: {dora.coverage.workflowRunsAvailable ? "✓" : "missing"}</div>
+                    <div className={`rounded-lg p-2 ${dora.coverage.incidentsAvailable ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>Incidents: {dora.coverage.incidentsAvailable ? "✓" : "missing"}</div>
+                    <div className={`rounded-lg p-2 ${dora.coverage.leadTimeAvailable ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>Lead time: {dora.coverage.leadTimeAvailable ? "✓" : "missing"}</div>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Settings */}
