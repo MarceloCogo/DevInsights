@@ -11,6 +11,7 @@ interface ChangeFailureRateCardProps {
   trend?: number;
   failedDeployments?: number;
   totalDeployments?: number;
+  quality?: 'real' | 'estimated' | 'missing';
 }
 
 export function ChangeFailureRateCard({
@@ -18,6 +19,7 @@ export function ChangeFailureRateCard({
   trend,
   failedDeployments,
   totalDeployments,
+  quality = 'real',
 }: ChangeFailureRateCardProps) {
   const getBenchmark = (rate: number): { label: string; color: string; bg: string } => {
     if (rate <= 5) return { label: 'Elite', color: 'text-emerald-400', bg: 'bg-emerald-400' };
@@ -26,7 +28,21 @@ export function ChangeFailureRateCard({
     return { label: 'Low', color: 'text-red-400', bg: 'bg-red-400' };
   };
 
+  const getQualityBadge = (): { label: string; color: string } => {
+    switch (quality) {
+      case 'real':
+        return { label: 'Real', color: 'text-emerald-400' };
+      case 'estimated':
+        return { label: 'Estimated', color: 'text-amber-400' };
+      case 'missing':
+        return { label: 'Missing', color: 'text-red-400' };
+      default:
+        return { label: 'Real', color: 'text-emerald-400' };
+    }
+  };
+
   const benchmark = failureRate !== null ? getBenchmark(failureRate) : null;
+  const qualityBadge = getQualityBadge();
 
   return (
     <div className="rounded-lg border border-line bg-panel p-4">
@@ -43,14 +59,26 @@ export function ChangeFailureRateCard({
               )}
             </>
           ) : (
-            <p className="mt-2 text-lg text-muted">No data available</p>
+            <>
+              <p className="mt-2 text-3xl font-bold text-text">N/A</p>
+              <p className="text-xs text-muted">
+                {quality === 'missing' ? 'No deployment data available' : 'Configure incident labels'}
+              </p>
+            </>
           )}
         </div>
-        {benchmark && (
-          <div className={`text-sm font-medium ${benchmark.color}`}>
-            {benchmark.label}
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1">
+          {benchmark && (
+            <div className={`text-sm font-medium ${benchmark.color}`}>
+              {benchmark.label}
+            </div>
+          )}
+          {failureRate !== null && quality !== 'real' && (
+            <div className={`text-xs font-medium ${qualityBadge.color}`}>
+              {qualityBadge.label}
+            </div>
+          )}
+        </div>
       </div>
 
       {failureRate !== null && (

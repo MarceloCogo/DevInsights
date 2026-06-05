@@ -10,9 +10,10 @@ interface MTTRCardProps {
   mttrHours: number | null;
   trend?: number;
   incidentsCount?: number;
+  quality?: 'real' | 'estimated' | 'missing';
 }
 
-export function MTTRCard({ mttrHours, trend, incidentsCount }: MTTRCardProps) {
+export function MTTRCard({ mttrHours, trend, incidentsCount, quality = 'real' }: MTTRCardProps) {
   const formatMTTR = (hours: number): string => {
     if (hours < 1) {
       return `${Math.round(hours * 60)}m`;
@@ -31,7 +32,21 @@ export function MTTRCard({ mttrHours, trend, incidentsCount }: MTTRCardProps) {
     return { label: 'Low', color: 'text-red-400' };
   };
 
+  const getQualityBadge = (): { label: string; color: string } => {
+    switch (quality) {
+      case 'real':
+        return { label: 'Real', color: 'text-emerald-400' };
+      case 'estimated':
+        return { label: 'Estimated', color: 'text-amber-400' };
+      case 'missing':
+        return { label: 'Missing', color: 'text-red-400' };
+      default:
+        return { label: 'Real', color: 'text-emerald-400' };
+    }
+  };
+
   const benchmark = mttrHours !== null ? getBenchmark(mttrHours) : null;
+  const qualityBadge = getQualityBadge();
 
   return (
     <div className="rounded-lg border border-line bg-panel p-4">
@@ -48,14 +63,26 @@ export function MTTRCard({ mttrHours, trend, incidentsCount }: MTTRCardProps) {
               )}
             </>
           ) : (
-            <p className="mt-2 text-lg text-muted">No incidents recorded</p>
+            <>
+              <p className="mt-2 text-3xl font-bold text-text">N/A</p>
+              <p className="text-xs text-muted">
+                {quality === 'missing' ? 'No incidents recorded' : 'Configure incident labels'}
+              </p>
+            </>
           )}
         </div>
-        {benchmark && (
-          <div className={`text-sm font-medium ${benchmark.color}`}>
-            {benchmark.label}
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1">
+          {benchmark && (
+            <div className={`text-sm font-medium ${benchmark.color}`}>
+              {benchmark.label}
+            </div>
+          )}
+          {mttrHours !== null && quality !== 'real' && (
+            <div className={`text-xs font-medium ${qualityBadge.color}`}>
+              {qualityBadge.label}
+            </div>
+          )}
+        </div>
       </div>
 
       {trend !== undefined && mttrHours !== null && (

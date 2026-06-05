@@ -96,6 +96,25 @@ export const registerDoraRoutes = (app: FastifyInstance, deps: RouteDeps) => {
       ? Number(leadTimeResult.rows[0]?.avg_lead_time_hours ?? 0)
       : null;
 
+    // Determine quality for each metric
+    const deploymentFrequencyQuality = !productionConfigured 
+      ? 'missing' as const
+      : deploymentsCount30d > 0 
+        ? 'real' as const
+        : workflowRunsCount30d > 0 
+          ? 'estimated' as const
+          : 'missing' as const;
+
+    const leadTimeQuality = !productionConfigured
+      ? 'missing' as const
+      : matchedLeadTimePrs > 0 
+        ? 'real' as const
+        : 'missing' as const;
+
+    const mttrQuality = incidentsCount30d > 0 
+      ? 'real' as const
+      : 'missing' as const;
+
     const status = !productionConfigured
       ? "setup_required"
       : deploymentsCount30d === 0 || matchedLeadTimePrs === 0
@@ -106,9 +125,13 @@ export const registerDoraRoutes = (app: FastifyInstance, deps: RouteDeps) => {
       status,
       period: "30d",
       deploymentFrequency30d: deploymentsCount30d,
+      deploymentFrequencyQuality,
       leadTimeForChangesHours,
+      leadTimeQuality,
       changeFailureRate: null,
+      changeFailureRateQuality: 'missing' as const,
       mttrHours: incidentsCount30d > 0 ? Number(incidents30dResult.rows[0]?.avg_mttr_hours ?? 0) : null,
+      mttrQuality,
       coverage: {
         productionEnvironmentsConfigured: productionConfigured,
         deploymentsAvailable: deploymentsCount30d > 0,

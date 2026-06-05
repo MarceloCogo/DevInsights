@@ -10,9 +10,10 @@ interface LeadTimeCardProps {
   leadTimeHours: number | null;
   trend?: number;
   distribution?: Array<{ range: string; count: number }>;
+  quality?: 'real' | 'estimated' | 'missing';
 }
 
-export function LeadTimeCard({ leadTimeHours, trend, distribution }: LeadTimeCardProps) {
+export function LeadTimeCard({ leadTimeHours, trend, distribution, quality = 'real' }: LeadTimeCardProps) {
   const formatLeadTime = (hours: number): string => {
     if (hours < 24) {
       return `${Math.round(hours)}h`;
@@ -33,7 +34,21 @@ export function LeadTimeCard({ leadTimeHours, trend, distribution }: LeadTimeCar
     return { label: 'Low', color: 'text-red-400' };
   };
 
+  const getQualityBadge = (): { label: string; color: string } => {
+    switch (quality) {
+      case 'real':
+        return { label: 'Real', color: 'text-emerald-400' };
+      case 'estimated':
+        return { label: 'Estimated', color: 'text-amber-400' };
+      case 'missing':
+        return { label: 'Missing', color: 'text-red-400' };
+      default:
+        return { label: 'Real', color: 'text-emerald-400' };
+    }
+  };
+
   const benchmark = leadTimeHours !== null ? getBenchmark(leadTimeHours) : null;
+  const qualityBadge = getQualityBadge();
 
   return (
     <div className="rounded-lg border border-line bg-panel p-4">
@@ -48,16 +63,26 @@ export function LeadTimeCard({ leadTimeHours, trend, distribution }: LeadTimeCar
               <p className="text-xs text-muted">average time from commit to deploy</p>
             </>
           ) : (
-            <p className="mt-2 text-lg text-muted">
-              Configure production environments
-            </p>
+            <>
+              <p className="mt-2 text-3xl font-bold text-text">N/A</p>
+              <p className="text-xs text-muted">
+                {quality === 'missing' ? 'No deployment data available' : 'Configure production environments'}
+              </p>
+            </>
           )}
         </div>
-        {benchmark && (
-          <div className={`text-sm font-medium ${benchmark.color}`}>
-            {benchmark.label}
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1">
+          {benchmark && (
+            <div className={`text-sm font-medium ${benchmark.color}`}>
+              {benchmark.label}
+            </div>
+          )}
+          {leadTimeHours !== null && quality !== 'real' && (
+            <div className={`text-xs font-medium ${qualityBadge.color}`}>
+              {qualityBadge.label}
+            </div>
+          )}
+        </div>
       </div>
 
       {trend !== undefined && leadTimeHours !== null && (

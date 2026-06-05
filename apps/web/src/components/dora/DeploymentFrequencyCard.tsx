@@ -13,6 +13,7 @@ interface DeploymentFrequencyCardProps {
   deployments30d: number;
   trend?: number; // percentage change from previous period
   benchmark?: 'elite' | 'high' | 'medium' | 'low';
+  quality?: 'real' | 'estimated' | 'missing';
 }
 
 const BENCHMARK_LABELS = {
@@ -26,19 +27,53 @@ export function DeploymentFrequencyCard({
   deployments30d,
   trend,
   benchmark = 'medium',
+  quality = 'real',
 }: DeploymentFrequencyCardProps) {
   const benchmarkConfig = BENCHMARK_LABELS[benchmark];
+
+  const getQualityBadge = (): { label: string; color: string } => {
+    switch (quality) {
+      case 'real':
+        return { label: 'Real', color: 'text-emerald-400' };
+      case 'estimated':
+        return { label: 'Estimated', color: 'text-amber-400' };
+      case 'missing':
+        return { label: 'Missing', color: 'text-red-400' };
+      default:
+        return { label: 'Real', color: 'text-emerald-400' };
+    }
+  };
+
+  const qualityBadge = getQualityBadge();
 
   return (
     <div className="rounded-lg border border-line bg-panel p-4">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-sm font-medium text-muted">Deployment Frequency</h3>
-          <p className="mt-2 text-3xl font-bold text-text">{deployments30d}</p>
-          <p className="text-xs text-muted">deployments in last 30 days</p>
+          {deployments30d > 0 ? (
+            <>
+              <p className="mt-2 text-3xl font-bold text-text">{deployments30d}</p>
+              <p className="text-xs text-muted">deployments in last 30 days</p>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-3xl font-bold text-text">N/A</p>
+              <p className="text-xs text-muted">
+                {quality === 'missing' ? 'No deployments recorded' : 'Configure production environments'}
+              </p>
+            </>
+          )}
         </div>
-        <div className={`rounded-full px-2.5 py-1 text-xs font-medium ${benchmarkConfig.color} ${benchmarkConfig.bg}`}>
-          {benchmarkConfig.label}
+        <div className="flex flex-col items-end gap-1">
+          <div className={`rounded-full px-2.5 py-1 text-xs font-medium ${benchmarkConfig.color} ${benchmarkConfig.bg}`}>
+            {benchmarkConfig.label}
+          </div>
+          {deployments30d > 0 && quality !== 'real' && (
+            <div className={`text-xs font-medium ${qualityBadge.color}`}>
+              {qualityBadge.label}
+            </div>
+          )}
         </div>
       </div>
 
