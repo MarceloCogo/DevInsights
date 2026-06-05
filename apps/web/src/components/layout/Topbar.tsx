@@ -17,7 +17,8 @@ const SECTION_TITLES: Record<Section, string> = {
   repositories: "Repositories",
   teams: "Teams",
   integrations: "Integrations",
-  settings: "Settings"
+  settings: "Settings",
+  pve: "PVE"
 } as const;
 
 /**
