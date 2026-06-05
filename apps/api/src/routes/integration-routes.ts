@@ -1,4 +1,7 @@
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
+import { parseBody } from "../lib/validate.js";
+import { sendValidationError } from "../lib/errors.js";
 import type { RouteDeps } from "./types.js";
 
 export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps) => {
@@ -180,19 +183,18 @@ export const registerIntegrationRoutes = (app: FastifyInstance, deps: RouteDeps)
     }
   });
 
+  const selectRepositoriesSchema = z.object({
+    repositoryIds: z.array(z.number().int().positive()).max(100),
+  });
+
   app.post(`${apiBasePath}/integrations/github/repositories/select`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
     const db = getPool();
     const session = await getSessionUser(request.cookies[sessionCookieName]);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
-    const body = request.body as { repositoryIds?: Array<number | string> };
-    const rawRepositoryIds = Array.isArray(body.repositoryIds) ? body.repositoryIds : [];
-    const repositoryIds = rawRepositoryIds
-      .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value) && value > 0);
-    if (rawRepositoryIds.length !== repositoryIds.length) {
-      return reply.code(400).send({ error: "invalid_repository_ids" });
-    }
+    const parsed = parseBody(selectRepositoriesSchema, request.body);
+    if (!parsed.success) return sendValidationError(reply, parsed.details);
+    const repositoryIds = parsed.data.repositoryIds;
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
     const installationResult = await db.query(`select installation_id from github_installations where organization_id = $1 limit 1`, [organizationId]);
