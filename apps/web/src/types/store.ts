@@ -74,7 +74,8 @@ export type Section =
   | 'repositories'
   | 'teams'
   | 'integrations'
-  | 'settings';
+  | 'settings'
+  | 'pve';
 
 /**
  * Supported locale identifiers
