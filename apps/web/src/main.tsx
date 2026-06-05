@@ -330,12 +330,11 @@ function AppDashboardPage() {
   const avatarFallback = avatarName.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
   const navItems = [
-    { key: "dashboard" as Section, label: "Dashboard", icon: "▦" },
-    { key: "productivity" as Section, label: "Productivity", icon: "↗" },
-    { key: "metrics" as Section, label: "Metrics", icon: "◫" },
-    { key: "repositories" as Section, label: "Repositories", icon: "▤" },
-    { key: "teams" as Section, label: "Teams", icon: "◎" },
-    { key: "integrations" as Section, label: "Integrations", icon: "◌" }
+    { key: "dashboard" as Section, label: "Overview", icon: "▦" },
+    { key: "productivity" as Section, label: "PR Flow", icon: "↗" },
+    { key: "pve" as Section, label: "PVE", icon: "★" },
+    { key: "metrics" as Section, label: "DORA", icon: "◫" },
+    { key: "repositories" as Section, label: "Repositories", icon: "▤" }
   ];
 
   if (loading) return <LoadingState message={isPt ? "Carregando..." : "Loading..."} />;
@@ -371,8 +370,16 @@ function AppDashboardPage() {
           <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur md:px-8">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h1 className="text-xl font-semibold text-white md:text-2xl">{section.charAt(0).toUpperCase() + section.slice(1)}</h1>
-                <p className="mt-1 text-sm text-slate-400">Last 30 days</p>
+                <h1 className="text-xl font-semibold text-white md:text-2xl">{
+                  section === "dashboard" ? "Overview" :
+                  section === "productivity" ? "PR Flow" :
+                  section === "metrics" ? "DORA" :
+                  section === "pve" ? "PVE — Points of Value Delivered" :
+                  section.charAt(0).toUpperCase() + section.slice(1)
+                }</h1>
+                <p className="mt-1 text-sm text-slate-400">{
+                  section === "pve" ? "Rank delivered value by developer based on merged Pull Requests." : "Last 30 days"
+                }</p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -412,60 +419,83 @@ function AppDashboardPage() {
               {latestSyncError && <p className="mt-2 text-xs text-amber-300">Error: {latestSyncError}</p>}
             </section>
 
-            {/* Metrics cards */}
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              {[
-                ["Throughput 7d", overview?.throughput7d ?? 0],
-                ["Throughput 30d", overview?.throughput30d ?? 0],
-                ["Average PR size", overview?.avgPrSize ?? 0],
-                ["Stale PRs", overview?.stalePrs ?? 0],
-                ["Review time", `${reviewTimeHours}h`],
-                ["Merge rate", `${mergeRate}%`]
-              ].map(([label, value]) => (
-                <Card key={String(label)} className="rounded-xl border border-slate-800 bg-slate-900">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-                </Card>
-              ))}
-            </section>
+            {/* Cards gerais e PR Intelligence - apenas em dashboard e productivity */}
+            {(section === "dashboard" || section === "productivity") && (
+              <>
+                {/* Metrics cards */}
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                  {[
+                    ["Throughput 7d", overview?.throughput7d ?? 0],
+                    ["Throughput 30d", overview?.throughput30d ?? 0],
+                    ["Average PR size", overview?.avgPrSize ?? 0],
+                    ["Stale PRs", overview?.stalePrs ?? 0],
+                    ["Review time", `${reviewTimeHours}h`],
+                    ["Merge rate", `${mergeRate}%`]
+                  ].map(([label, value]) => (
+                    <Card key={String(label)} className="rounded-xl border border-slate-800 bg-slate-900">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+                    </Card>
+                  ))}
+                </section>
 
-            {/* PR Table */}
-            <Card title="PR Intelligence" subtitle="Latest signals detected from pull requests" className="rounded-2xl border border-slate-800 bg-slate-900">
-              <div className="mt-4 overflow-x-auto rounded-xl border border-slate-800">
-                <table className="min-w-[980px] w-full border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-800 bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
-                      <th className="px-3 py-3">Time</th>
-                      <th className="px-3 py-3">Signal</th>
-                      <th className="px-3 py-3">PR</th>
-                      <th className="px-3 py-3">Repository</th>
-                      <th className="px-3 py-3">Author</th>
-                      <th className="px-3 py-3">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedPullRequests.map((pr) => (
-                      <tr key={pr.github_pr_id} className="border-b border-slate-800 last:border-b-0">
-                        <td className="px-3 py-3 text-slate-400">{formatSyncTime(pr.updated_at ?? pr.opened_at)}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {signalTag(pr).map((tag) => (
-                              <RiskSignalBadge key={`${pr.github_pr_id}-${tag}`} type={tag as any} size="sm" />
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 font-medium text-white">#{pr.number} {pr.title}</td>
-                        <td className="px-3 py-3 text-slate-300">{pr.repository_full_name}</td>
-                        <td className="px-3 py-3 text-slate-400">{pr.author_login ?? "-"}</td>
-                        <td className="px-3 py-3">
-                          {pr.html_url ? <a href={pr.html_url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Open</a> : <span className="text-xs text-slate-500">-</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* PR Table */}
+                <Card title="PR Intelligence" subtitle="Latest signals detected from pull requests" className="rounded-2xl border border-slate-800 bg-slate-900">
+                  <div className="mt-4 overflow-x-auto rounded-xl border border-slate-800">
+                    <table className="min-w-[980px] w-full border-collapse text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-800 bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
+                          <th className="px-3 py-3">Time</th>
+                          <th className="px-3 py-3">Signal</th>
+                          <th className="px-3 py-3">PR</th>
+                          <th className="px-3 py-3">Repository</th>
+                          <th className="px-3 py-3">Author</th>
+                          <th className="px-3 py-3">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedPullRequests.map((pr) => (
+                          <tr key={pr.github_pr_id} className="border-b border-slate-800 last:border-b-0">
+                            <td className="px-3 py-3 text-slate-400">{formatSyncTime(pr.updated_at ?? pr.opened_at)}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap gap-1">
+                                {signalTag(pr).map((tag) => (
+                                  <RiskSignalBadge key={`${pr.github_pr_id}-${tag}`} type={tag as any} size="sm" />
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 font-medium text-white">#{pr.number} {pr.title}</td>
+                            <td className="px-3 py-3 text-slate-300">{pr.repository_full_name}</td>
+                            <td className="px-3 py-3 text-slate-400">{pr.author_login ?? "-"}</td>
+                            <td className="px-3 py-3">
+                              {pr.html_url ? <a href={pr.html_url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800">Open</a> : <span className="text-xs text-slate-500">-</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </>
+            )}
+
+            {/* PVE Section */}
+            {section === "pve" && (
+              <div className="space-y-6">
+                <Card className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center">
+                  <div className="mx-auto max-w-md">
+                    <div className="mb-4 text-4xl">★</div>
+                    <h3 className="text-xl font-semibold text-white mb-2">PVE v0 coming next</h3>
+                    <p className="text-sm text-slate-400 mb-4">
+                      PVE will use merged PRs, cycle time and PR size to estimate delivered value.
+                    </p>
+                    <div className="rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-xs text-slate-500">
+                      Calculation requires PR data from synced repositories
+                    </div>
+                  </div>
+                </Card>
               </div>
-            </Card>
+            )}
 
             {/* DORA Metrics */}
             {section === "metrics" && dora && (
