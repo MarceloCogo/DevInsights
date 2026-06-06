@@ -80,4 +80,51 @@ export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) =
       pullRequests: prsResult.rows
     };
   });
+
+  app.get(`${apiBasePath}/dashboard/pr-flow-overview`, async (request, reply) => {
+    if (!ensureDatabase(reply)) return;
+    const db = getPool();
+    const session = await getSessionUser(request.cookies[sessionCookieName]);
+    if (!session) return reply.code(401).send({ error: "unauthorized" });
+    const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
+    if (!organizationId) return reply.code(400).send({ error: "missing_organization" });
+
+    // 1. mergedPrs30d
+    const mergedPrsResult = await db.query(
+      `SELECT COUNT(*)::int AS count FROM pull_requests WHERE organization_id = $1 AND merged_at IS NOT NULL AND merged_at >= NOW() - INTERVAL '30 days'`,
+      [organizationId]
+    );
+
+    // 2. avgPrCycleTimeHours
+    const avgCycleTimeResult = await db.query(
+      `SELECT AVG(EXTRACT(EPOCH FROM (merged_at - opened_at)) / 3600) AS avg_hours FROM pull_requests WHERE organization_id = $1 AND merged_at IS NOT NULL AND opened_at IS NOT NULL AND merged_at >= NOW() - INTERVAL '30 days'`,
+      [organizationId]
+    );
+
+    // 3. avgPrSize
+    const avgSizeResult = await db.query(
+      `SELECT AVG(COALESCE(additions, 0) + COALESCE(deletions, 0)) AS avg_size FROM pull_requests WHERE organization_id = $1 AND merged_at IS NOT NULL AND merged_at >= NOW() - INTERVAL '30 days'`,
+      [organizationId]
+    );
+
+    // 4. stuckOpenPrs
+    const stuckOpenResult = await db.query(
+      `SELECT COUNT(*)::int AS count FROM pull_requests WHERE organization_id = $1 AND state = 'open' AND opened_at IS NOT NULL AND opened_at < NOW() - INTERVAL '7 days'`,
+      [organizationId]
+    );
+
+    // 5. topContributors
+    const topContributorsResult = await db.query(
+      `SELECT author_login, COUNT(*)::int AS merged_count FROM pull_requests WHERE organization_id = $1 AND merged_at IS NOT NULL AND merged_at >= NOW() - INTERVAL '30 days' AND author_login IS NOT NULL GROUP BY author_login ORDER BY merged_count DESC LIMIT 5`,
+      [organizationId]
+    );
+
+    return {
+      mergedPrs30d: mergedPrsResult.rows[0]?.count ?? 0,
+      avgPrCycleTimeHours: avgCycleTimeResult.rows[0]?.avg_hours ?? null,
+      avgPrSize: avgSizeResult.rows[0]?.avg_size ?? null,
+      stuckOpenPrs: stuckOpenResult.rows[0]?.count ?? 0,
+      topContributors: topContributorsResult.rows
+    };
+  });
 };

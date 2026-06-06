@@ -181,3 +181,17 @@ export interface SyncProgress {
   finishedAt?: string | null;
   errorMessage?: string | null;
 }
+
+/**
+ * PR Flow overview metrics
+ */
+export interface PrFlowOverview {
+  mergedPrs30d: number;
+  avgPrCycleTimeHours: number | null;
+  avgPrSize: number | null;
+  stuckOpenPrs: number;
+  topContributors: Array<{
+    author_login: string;
+    merged_count: number;
+  }>;
+}

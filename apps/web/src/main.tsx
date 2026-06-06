@@ -20,7 +20,7 @@ import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line, X
 
 // Types
 import type { Locale, Section } from "./types/store";
-import type { PullRequest, Repository, DashboardOverview, DoraOverview, SyncProgress, OnboardingStatus, IntegrationLogItem, SyncJob } from "./types/api";
+import type { PullRequest, Repository, DashboardOverview, DoraOverview, SyncProgress, OnboardingStatus, IntegrationLogItem, SyncJob, PrFlowOverview } from "./types/api";
 
 const resolveApiBaseUrl = () => {
   const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
@@ -105,6 +105,7 @@ function AppDashboardPage() {
   const [pullRequests, setPullRequests] = React.useState<PullRequest[]>([]);
   const [dora, setDora] = React.useState<DoraOverview | null>(null);
   const [doraTimeseries, setDoraTimeseries] = React.useState<any>(null);
+  const [prFlow, setPrFlow] = React.useState<PrFlowOverview | null>(null);
   const [onboarding, setOnboarding] = React.useState<OnboardingStatus | null>(null);
   const [repoFilter, setRepoFilter] = React.useState("all");
   const [stateFilter, setStateFilter] = React.useState("all");
@@ -189,6 +190,12 @@ function AppDashboardPage() {
     return (await response.json()) as DoraOverview;
   }, [apiBaseUrl]);
 
+  const loadPrFlowOverview = React.useCallback(async () => {
+    const response = await fetch(`${apiBaseUrl}/dashboard/pr-flow-overview`, { credentials: "include" });
+    if (!response.ok) throw new Error("Failed to load PR Flow overview");
+    return (await response.json()) as PrFlowOverview;
+  }, [apiBaseUrl]);
+
   const loadDoraTimeseries = React.useCallback(async () => {
     const response = await fetch(`${apiBaseUrl}/dashboard/dora-timeseries?period=90d`, { credentials: "include" });
     if (!response.ok) return null;
@@ -232,6 +239,7 @@ function AppDashboardPage() {
         setOnboarding(await loadOnboardingStatus());
         setSyncProgress(await loadSyncProgress());
         setDora(await loadDoraOverview());
+        setPrFlow(await loadPrFlowOverview());
         setDoraTimeseries(await loadDoraTimeseries());
       } catch (e) {
         setAppError(e instanceof Error ? e.message : "Unknown error");
@@ -424,20 +432,81 @@ function AppDashboardPage() {
               <>
                 {/* Metrics cards */}
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                  {[
-                    ["Throughput 7d", overview?.throughput7d ?? 0],
-                    ["Throughput 30d", overview?.throughput30d ?? 0],
-                    ["Average PR size", overview?.avgPrSize ?? 0],
-                    ["Stale PRs", overview?.stalePrs ?? 0],
-                    ["Review time", `${reviewTimeHours}h`],
-                    ["Merge rate", `${mergeRate}%`]
-                  ].map(([label, value]) => (
-                    <Card key={String(label)} className="rounded-xl border border-slate-800 bg-slate-900">
-                      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
-                      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-                    </Card>
-                  ))}
+                  {section === "dashboard" ? (
+                    // Dashboard cards (old metrics)
+                    <>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Throughput 7d</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{overview?.throughput7d ?? 0}</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Throughput 30d</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{overview?.throughput30d ?? 0}</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Average PR size</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{overview?.avgPrSize ?? 0}</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Stale PRs</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{overview?.stalePrs ?? 0}</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Review time</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{reviewTimeHours}h</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Merge rate</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{mergeRate}%</p>
+                      </Card>
+                    </>
+                  ) : (
+                    // PR Flow cards (new metrics)
+                    <>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Merged PRs</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{prFlow?.mergedPrs30d ?? 0}</p>
+                        <p className="text-xs text-slate-500 mt-1">Last 30 days</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Avg PR Cycle Time</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {prFlow?.avgPrCycleTimeHours ? `${Math.round(prFlow.avgPrCycleTimeHours)}h` : "—"}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">Merged PRs</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Avg PR Size</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {prFlow?.avgPrSize ? Math.round(prFlow.avgPrSize) : "—"}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">Lines changed</p>
+                      </Card>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Stuck PRs</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{prFlow?.stuckOpenPrs ?? 0}</p>
+                        <p className="text-xs text-slate-500 mt-1">Open &gt; 7 days</p>
+                      </Card>
+                    </>
+                  )}
                 </section>
+
+                {/* Top Contributors - only in PR Flow */}
+                {section === "productivity" && prFlow?.topContributors && prFlow.topContributors.length > 0 && (
+                  <Card title="Top Contributors by Merged PRs" subtitle="Authors with most merged PRs in the last 30 days" className="rounded-2xl border border-slate-800 bg-slate-900">
+                    <div className="mt-4 space-y-2">
+                      {prFlow.topContributors.map((contributor, index) => (
+                        <div key={contributor.author_login} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-bold text-slate-500">#{index + 1}</span>
+                            <span className="text-sm font-medium text-white">{contributor.author_login}</span>
+                          </div>
+                          <span className="text-sm font-semibold text-cyan-400">{contributor.merged_count} merged</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
 
                 {/* PR Table */}
                 <Card title="PR Intelligence" subtitle="Latest signals detected from pull requests" className="rounded-2xl border border-slate-800 bg-slate-900">
