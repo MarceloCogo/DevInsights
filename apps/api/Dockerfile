@@ -16,10 +16,6 @@ RUN pnpm --filter @devinsights/api build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN corepack enable
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/src/storage/migrations ./apps/api/dist/storage/migrations
 COPY --from=build /app/apps/web/dist ./apps/web/dist
