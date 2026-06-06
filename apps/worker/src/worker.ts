@@ -18,7 +18,15 @@ if (!githubAppId || !githubAppPrivateKey) {
   throw new Error("GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY are required");
 }
 
-const pool = new Pool({ connectionString: databaseUrl });
+const pool = new Pool({
+  connectionString: databaseUrl,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  keepAlive: true,
+});
+pool.on("error", (err) => {
+  console.error("Unexpected pool error", { error: String(err) });
+});
 const githubAppClient = new GitHubApp({
   appId: githubAppId,
   privateKey: githubAppPrivateKey.replace(/\\n/g, "\n")
