@@ -255,7 +255,11 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
       [processed, jobId]
     );
 
+    // Cutoff for fetching individual PR details (last 90 days)
+    const enrichmentCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
     for (const pr of pulls) {
+      // Basic upsert from listing data
       await pool.query(
         `
           insert into pull_requests (
@@ -273,9 +277,6 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
             author_login = excluded.author_login,
             state = excluded.state,
             draft = excluded.draft,
-            additions = excluded.additions,
-            deletions = excluded.deletions,
-            changed_files = excluded.changed_files,
             opened_at = excluded.opened_at,
             closed_at = excluded.closed_at,
             merged_at = excluded.merged_at,
@@ -302,6 +303,90 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
           pr.html_url ?? null
         ]
       );
+
+      // Fetch individual PR detail for enrichment (only for recent PRs)
+      const prUpdatedAt = pr.updated_at ?? pr.created_at ?? null;
+      if (prUpdatedAt && prUpdatedAt >= enrichmentCutoff) {
+        try {
+          // Check if we already have up-to-date detail
+          const existingResult = await pool.query(
+            `SELECT updated_at FROM pull_requests WHERE organization_id = $1 AND repository_id = $2 AND github_pr_id = $3`,
+            [organizationId, repository.repository_id, pr.id]
+          );
+          const existingUpdatedAt = existingResult.rows[0]?.updated_at as string | null;
+          const needsEnrichment = !existingUpdatedAt || (prUpdatedAt && new Date(prUpdatedAt) >= new Date(existingUpdatedAt));
+
+          if (needsEnrichment) {
+            const detail = await octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number: pr.number
+            });
+
+            const d = detail.data as {
+              body?: string | null;
+              additions?: number;
+              deletions?: number;
+              changed_files?: number;
+              commits?: number;
+              comments?: number;
+              review_comments?: number;
+              merge_commit_sha?: string | null;
+              labels?: Array<{ name?: string; color?: string; description?: string | null }>;
+              base?: { ref?: string };
+              head?: { ref?: string };
+              draft?: boolean;
+              updated_at?: string;
+            };
+
+            const labels = (d.labels ?? []).map((l) => ({ name: l.name ?? "", color: l.color ?? "", description: l.description ?? "" }));
+
+            await pool.query(
+              `
+                UPDATE pull_requests SET
+                  body = $1,
+                  draft = $2,
+                  additions = $3,
+                  deletions = $4,
+                  changed_files = $5,
+                  commits_count = $6,
+                  comments_count = $7,
+                  review_comments_count = $8,
+                  merge_commit_sha = $9,
+                  labels = $10,
+                  base_branch = $11,
+                  head_branch = $12,
+                  updated_at = $13
+                WHERE organization_id = $14 AND repository_id = $15 AND github_pr_id = $16
+              `,
+              [
+                d.body ?? null,
+                Boolean(d.draft),
+                d.additions ?? 0,
+                d.deletions ?? 0,
+                d.changed_files ?? 0,
+                d.commits ?? null,
+                d.comments ?? null,
+                d.review_comments ?? null,
+                d.merge_commit_sha ?? null,
+                JSON.stringify(labels),
+                d.base?.ref ?? null,
+                d.head?.ref ?? null,
+                d.updated_at ?? pr.updated_at ?? null,
+                organizationId,
+                repository.repository_id,
+                pr.id
+              ]
+            );
+
+            // Small delay to respect rate limits
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        } catch (enrichError) {
+          console.error("PR detail enrichment failed", { repo: repository.full_name, prNumber: pr.number, error: String(enrichError) });
+          // Continue with next PR - don't break the sync
+        }
+      }
     }
 
     await pool.query(
