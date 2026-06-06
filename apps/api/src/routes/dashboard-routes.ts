@@ -19,7 +19,7 @@ export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) =
     const openResult = await db.query(`select count(*)::int as count from pull_requests where organization_id = $1 and state = 'open'`, [organizationId]);
     const merged7dResult = await db.query(`select count(*)::int as count from pull_requests where organization_id = $1 and merged_at >= now() - interval '7 days'`, [organizationId]);
     const merged30dResult = await db.query(`select count(*)::int as count from pull_requests where organization_id = $1 and merged_at >= now() - interval '30 days'`, [organizationId]);
-    const avgSizeResult = await db.query(`select coalesce(round(avg(additions + deletions)), 0)::int as avg_size from pull_requests where organization_id = $1`, [organizationId]);
+    const avgSizeResult = await db.query(`SELECT CASE WHEN COUNT(*) FILTER (WHERE additions IS NOT NULL OR deletions IS NOT NULL) = 0 THEN NULL ELSE ROUND(AVG(COALESCE(additions, 0) + COALESCE(deletions, 0)))::int END AS avg_size FROM pull_requests WHERE organization_id = $1`, [organizationId]);
     const staleResult = await db.query(`select count(*)::int as count from pull_requests where organization_id = $1 and state = 'open' and coalesce(updated_at, opened_at) < $2`, [organizationId, staleCutoff]);
     const latestSyncResult = await db.query(`select status, started_at, finished_at, total_prs from integration_sync_jobs where organization_id = $1 order by created_at desc limit 1`, [organizationId]);
     return {
@@ -27,7 +27,7 @@ export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) =
       openPrs: openResult.rows[0]?.count ?? 0,
       throughput7d: merged7dResult.rows[0]?.count ?? 0,
       throughput30d: merged30dResult.rows[0]?.count ?? 0,
-      avgPrSize: avgSizeResult.rows[0]?.avg_size ?? 0,
+      avgPrSize: avgSizeResult.rows[0]?.avg_size ?? null,
       stalePrs: staleResult.rows[0]?.count ?? 0,
       lastSync: latestSyncResult.rows[0] ?? null
     };
