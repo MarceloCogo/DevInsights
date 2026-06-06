@@ -119,12 +119,66 @@ export const registerDashboardRoutes = (app: FastifyInstance, deps: RouteDeps) =
       [organizationId]
     );
 
+    // 6. avgTimeToFirstReviewHours
+    const avgFirstReviewResult = await db.query(
+      `SELECT AVG(first_review_hours) AS avg_hours FROM (
+        SELECT MIN(EXTRACT(EPOCH FROM (r.submitted_at - pr.opened_at)) / 3600) AS first_review_hours
+        FROM pull_request_reviews r
+        JOIN pull_requests pr ON pr.id = r.pull_request_id
+        WHERE r.organization_id = $1
+          AND pr.merged_at >= NOW() - INTERVAL '30 days'
+          AND r.submitted_at IS NOT NULL
+          AND pr.opened_at IS NOT NULL
+        GROUP BY pr.id
+      ) sub WHERE first_review_hours >= 0`,
+      [organizationId]
+    );
+
+    // 7. approvalRate
+    const approvalRateResult = await db.query(
+      `SELECT
+        COUNT(DISTINCT pr.id)::int AS total_merged,
+        COUNT(DISTINCT pr.id) FILTER (WHERE r.state = 'APPROVED')::int AS approved_count
+      FROM pull_requests pr
+      LEFT JOIN pull_request_reviews r ON r.pull_request_id = pr.id
+      WHERE pr.organization_id = $1 AND pr.merged_at >= NOW() - INTERVAL '30 days'`,
+      [organizationId]
+    );
+
+    // 8. changesRequestedRate
+    const changesRequestedResult = await db.query(
+      `SELECT
+        COUNT(DISTINCT pr.id)::int AS total_merged,
+        COUNT(DISTINCT pr.id) FILTER (WHERE r.state = 'CHANGES_REQUESTED')::int AS changes_requested_count
+      FROM pull_requests pr
+      LEFT JOIN pull_request_reviews r ON r.pull_request_id = pr.id
+      WHERE pr.organization_id = $1 AND pr.merged_at >= NOW() - INTERVAL '30 days'`,
+      [organizationId]
+    );
+
+    // 9. topReviewers
+    const topReviewersResult = await db.query(
+      `SELECT reviewer_login, COUNT(*)::int AS review_count
+      FROM pull_request_reviews
+      WHERE organization_id = $1 AND submitted_at >= NOW() - INTERVAL '30 days' AND reviewer_login IS NOT NULL
+      GROUP BY reviewer_login ORDER BY review_count DESC LIMIT 5`,
+      [organizationId]
+    );
+
+    const totalMerged = approvalRateResult.rows[0]?.total_merged ?? 0;
+    const approvedCount = approvalRateResult.rows[0]?.approved_count ?? 0;
+    const changesRequestedCount = changesRequestedResult.rows[0]?.changes_requested_count ?? 0;
+
     return {
       mergedPrs30d: mergedPrsResult.rows[0]?.count ?? 0,
       avgPrCycleTimeHours: avgCycleTimeResult.rows[0]?.avg_hours ?? null,
       avgPrSize: avgSizeResult.rows[0]?.avg_size ?? null,
       stuckOpenPrs: stuckOpenResult.rows[0]?.count ?? 0,
-      topContributors: topContributorsResult.rows
+      topContributors: topContributorsResult.rows,
+      avgTimeToFirstReviewHours: avgFirstReviewResult.rows[0]?.avg_hours ?? null,
+      approvalRate: totalMerged > 0 ? Math.round((approvedCount / totalMerged) * 100) : null,
+      changesRequestedRate: totalMerged > 0 ? Math.round((changesRequestedCount / totalMerged) * 100) : null,
+      topReviewers: topReviewersResult.rows
     };
   });
 };

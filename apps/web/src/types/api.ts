@@ -194,4 +194,11 @@ export interface PrFlowOverview {
     author_login: string;
     merged_count: number;
   }>;
+  avgTimeToFirstReviewHours: number | null;
+  approvalRate: number | null;
+  changesRequestedRate: number | null;
+  topReviewers: Array<{
+    reviewer_login: string;
+    review_count: number;
+  }>;
 }
