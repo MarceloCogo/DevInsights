@@ -78,8 +78,20 @@ export const registerOrganizationRoutes = (app: FastifyInstance, deps: RouteDeps
   app.get(`${apiBasePath}/app/bootstrap`, async (request, reply) => {
     if (!ensureDatabase(reply)) return;
     const db = getPool();
+
+    // Diagnostic logs
+    const cookieHeader = request.headers.cookie;
+    const hasCookieHeader = Boolean(cookieHeader);
+    const sessionCookieValue = request.cookies[sessionCookieName];
+    const hasSessionCookie = Boolean(sessionCookieValue);
+    app.log.info({ hasCookieHeader, hasSessionCookie, sessionIdPrefix: sessionCookieValue ? sessionCookieValue.slice(0, 6) : null }, "[bootstrap] request received");
+
     const session = await getSessionUser(request.cookies[sessionCookieName]);
-    if (!session) return reply.code(401).send({ error: "unauthorized" });
+    if (!session) {
+      const reason = !hasCookieHeader ? "no_cookie_header" : !hasSessionCookie ? "session_cookie_missing" : "session_not_found_or_expired";
+      app.log.warn({ reason, sessionIdPrefix: sessionCookieValue ? sessionCookieValue.slice(0, 6) : null }, "[bootstrap] 401 unauthorized");
+      return reply.code(401).send({ error: "unauthorized" });
+    }
 
     const organizationId = await getOrganizationIdForUser(session.user.id, session.activeOrganizationId);
     if (!organizationId) {
