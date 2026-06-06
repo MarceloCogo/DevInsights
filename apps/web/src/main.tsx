@@ -115,6 +115,7 @@ function AppDashboardPage() {
   const [savingProductionEnvs, setSavingProductionEnvs] = React.useState(false);
   const [integrationLogs, setIntegrationLogs] = React.useState<IntegrationLogItem[]>([]);
   const [showIntegrationLogs, setShowIntegrationLogs] = React.useState(false);
+  const [syncingLoading, setSyncingLoading] = React.useState(false);
 
   // Computed values
   const selectedCount = repositories.filter((r) => r.selected).length;
@@ -256,7 +257,21 @@ function AppDashboardPage() {
     const interval = setInterval(async () => {
       try {
         const bootstrap = await loadBootstrap();
-        if (bootstrap) { setSyncStatus(bootstrap.sync); setOnboarding(await loadOnboardingStatus()); setSyncProgress(await loadSyncProgress()); setDora(await loadDoraOverview()); }
+        if (bootstrap) {
+          const prevStatus = syncStatus?.status;
+          setSyncStatus(bootstrap.sync);
+          setOnboarding(await loadOnboardingStatus());
+          setSyncProgress(await loadSyncProgress());
+          // When sync transitions to completed, reload all dashboard data
+          if (bootstrap.sync?.status === "completed" && prevStatus !== "completed") {
+            setOverview(await loadOverview());
+            const prs = await loadPullRequests();
+            setPullRequests(prs.pullRequests);
+            setAvailableRepos(prs.repositories);
+            setPrFlow(await loadPrFlowOverview());
+            setDora(await loadDoraOverview());
+          }
+        }
       } catch {}
     }, 4000);
     return () => clearInterval(interval);
@@ -280,6 +295,7 @@ function AppDashboardPage() {
   };
 
   const syncNow = async () => {
+    setSyncingLoading(true);
     try {
       const response = await fetch(`${apiBaseUrl}/integrations/github/sync-now`, { method: "POST", credentials: "include" });
       if (!response.ok) throw new Error("Failed to start sync");
@@ -287,6 +303,8 @@ function AppDashboardPage() {
       if (bootstrap) setSyncStatus(bootstrap.sync);
     } catch (e) {
       setAppError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSyncingLoading(false);
     }
   };
 
@@ -409,21 +427,46 @@ function AppDashboardPage() {
           </header>
 
           <div className="space-y-6 px-4 py-6 md:px-8 md:py-8">
-            {/* Onboarding banner */}
+            {/* Status banner */}
             <section className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 md:px-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-slate-300">{isPt ? `Onboarding: conecte o GitHub para gerar métricas.` : `Onboarding: connect GitHub to generate metrics.`}</p>
+                <p className="text-sm text-slate-300">
+                  {!connected
+                    ? (isPt ? "Conecte o GitHub para gerar métricas." : "Connect GitHub to generate metrics.")
+                    : integrationUiState === "CONNECTED_NO_REPOS"
+                    ? (isPt ? "GitHub conectado. Selecione repositórios para monitorar." : "GitHub connected. Select repositories to start tracking.")
+                    : integrationUiState === "SYNCING"
+                    ? (isPt ? "Sincronizando dados do repositório..." : "Syncing repository data...")
+                    : latestSyncError
+                    ? (isPt ? "Sync falhou. Tente novamente." : "Sync failed. Try again.")
+                    : integrationUiState === "SYNCED_WITH_DATA"
+                    ? `GitHub connected · Sync completed · ${selectedCount} repo${selectedCount !== 1 ? "s" : ""} · ${syncTotalPrs} PRs`
+                    : integrationUiState === "SYNCED_NO_DATA"
+                    ? (isPt ? "Sync concluído, mas nenhum PR encontrado." : "Sync completed but no PRs found.")
+                    : (isPt ? "GitHub conectado. Rode o sync para gerar métricas." : "GitHub connected. Run sync to generate metrics.")
+                  }
+                </p>
                 <div className="flex gap-2">
                   {!connected ? (
                     <Button variant="primary" size="sm" onClick={connectGitHubApp}>Connect GitHub App</Button>
-                  ) : integrationUiState === "SYNCING" ? (
-                    <Button variant="secondary" size="sm" disabled>Syncing...</Button>
+                  ) : integrationUiState === "SYNCING" || syncingLoading ? (
+                    <Button variant="secondary" size="sm" disabled>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                        Syncing...
+                      </span>
+                    </Button>
                   ) : (
                     <Button variant="primary" size="sm" onClick={syncNow} disabled={!canRunSync}>Run sync</Button>
                   )}
                 </div>
               </div>
-              {syncProgress && <p className="mt-2 text-xs text-slate-400">Sync: {syncProgress.phase} • {syncProgress.processedRepositories}/{syncProgress.totalRepositories} repos • {syncProgress.totalPrs} PRs</p>}
+              {syncProgress && integrationUiState === "SYNCING" && (
+                <p className="mt-2 text-xs text-slate-400">
+                  <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400 mr-2" />
+                  Sync: {syncProgress.phase} · {syncProgress.processedRepositories}/{syncProgress.totalRepositories} repos · {syncProgress.totalPrs} PRs
+                </p>
+              )}
               {latestSyncError && <p className="mt-2 text-xs text-amber-300">Error: {latestSyncError}</p>}
             </section>
 
@@ -433,31 +476,37 @@ function AppDashboardPage() {
                 {/* Metrics cards */}
                 <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                   {section === "dashboard" ? (
-                    // Dashboard cards (old metrics)
+                    // Overview cards
                     <>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Throughput 7d</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">PRs merged 7d</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{overview?.throughput7d ?? 0}</p>
+                        <p className="text-xs text-slate-500 mt-1">Merged pull requests in the last 7 days.</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Throughput 30d</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">PRs merged 30d</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{overview?.throughput30d ?? 0}</p>
+                        <p className="text-xs text-slate-500 mt-1">Merged pull requests in the last 30 days.</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Average PR size</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{overview?.avgPrSize ?? 0}</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Avg PR size</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{overview?.avgPrSize !== null && overview?.avgPrSize !== undefined ? overview.avgPrSize : "—"}</p>
+                        <p className="text-xs text-slate-500 mt-1">Average additions + deletions per merged PR.</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Stale PRs</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Stale open PRs</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{overview?.stalePrs ?? 0}</p>
+                        <p className="text-xs text-slate-500 mt-1">Open PRs older than 7 days.</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Review time</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Avg review time</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{reviewTimeHours}h</p>
+                        <p className="text-xs text-slate-500 mt-1">Average time spent in review.</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
                         <p className="text-xs uppercase tracking-wide text-slate-400">Merge rate</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{mergeRate}%</p>
+                        <p className="text-xs text-slate-500 mt-1">Share of closed PRs that were merged.</p>
                       </Card>
                     </>
                   ) : (

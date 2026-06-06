@@ -100,7 +100,7 @@ export interface DashboardOverview {
   openPrs: number;
   throughput7d: number;
   throughput30d: number;
-  avgPrSize: number;
+  avgPrSize: number | null;
   stalePrs: number;
   lastSync: {
     status: string;
