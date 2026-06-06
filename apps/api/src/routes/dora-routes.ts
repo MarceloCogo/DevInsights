@@ -230,7 +230,7 @@ export const registerDoraRoutes = (app: FastifyInstance, deps: RouteDeps) => {
         select
           date_trunc('week', d.deployed_at)::date as week,
           count(*)::int as total_deploys,
-          count(*) filter (where d.is_failure = true)::int as failed_deploys
+          count(*) filter (where d.state = 'failure')::int as failed_deploys
         from deployments d
         where d.organization_id = $1
           and d.deployed_at >= now() - interval '1 day' * $2
