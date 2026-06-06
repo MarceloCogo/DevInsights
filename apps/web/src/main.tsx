@@ -404,7 +404,9 @@ function AppDashboardPage() {
                   section.charAt(0).toUpperCase() + section.slice(1)
                 }</h1>
                 <p className="mt-1 text-sm text-slate-400">{
-                  section === "pve" ? "Rank delivered value by developer based on merged Pull Requests." : "Last 30 days"
+                  section === "pve" ? "Rank delivered value by developer based on merged Pull Requests."
+                  : section === "productivity" ? "Pull request flow, review speed and delivery bottlenecks."
+                  : "Last 30 days"
                 }</p>
               </div>
               <div className="flex items-center gap-3">
@@ -510,8 +512,12 @@ function AppDashboardPage() {
                       </Card>
                     </>
                   ) : (
-                    // PR Flow cards (new metrics)
+                    // PR Flow - organized in sections
                     <>
+                      {/* Section: Delivery Flow */}
+                      <div className="col-span-full">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Delivery Flow</p>
+                      </div>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
                         <p className="text-xs uppercase tracking-wide text-slate-400">Merged PRs</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{prFlow?.mergedPrs30d ?? 0}</p>
@@ -525,25 +531,11 @@ function AppDashboardPage() {
                         <p className="text-xs text-slate-500 mt-1">Open to merge</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Avg First Review</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">
-                          {prFlow?.avgTimeToFirstReviewHours ? `${Math.round(prFlow.avgTimeToFirstReviewHours)}h` : "—"}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">Time to first review</p>
-                      </Card>
-                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
                         <p className="text-xs uppercase tracking-wide text-slate-400">Avg PR Size</p>
                         <p className="mt-2 text-2xl font-semibold text-white">
                           {prFlow?.avgPrSize ? Math.round(prFlow.avgPrSize) : "—"}
                         </p>
                         <p className="text-xs text-slate-500 mt-1">Lines changed</p>
-                      </Card>
-                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Approval Rate</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">
-                          {prFlow?.approvalRate !== null && prFlow?.approvalRate !== undefined ? `${prFlow.approvalRate}%` : "—"}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">PRs with approval</p>
                       </Card>
                       <Card className="rounded-xl border border-slate-800 bg-slate-900">
                         <p className="text-xs uppercase tracking-wide text-slate-400">Stuck PRs</p>
@@ -554,39 +546,72 @@ function AppDashboardPage() {
                   )}
                 </section>
 
-                {/* Top Contributors and Top Reviewers - only in PR Flow */}
+                {/* Section: Review Flow - only in PR Flow */}
                 {section === "productivity" && (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {prFlow?.topContributors && prFlow.topContributors.length > 0 && (
-                      <Card title="Top Contributors by Merged PRs" subtitle="Last 30 days" className="rounded-2xl border border-slate-800 bg-slate-900">
-                        <div className="mt-4 space-y-2">
-                          {prFlow.topContributors.map((contributor, index) => (
-                            <div key={contributor.author_login} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <span className="text-sm font-bold text-slate-500">#{index + 1}</span>
-                                <span className="text-sm font-medium text-white">{contributor.author_login}</span>
-                              </div>
-                              <span className="text-sm font-semibold text-cyan-400">{contributor.merged_count} merged</span>
-                            </div>
-                          ))}
-                        </div>
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Review Flow</p>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Avg First Review</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {prFlow?.avgTimeToFirstReviewHours ? `${Math.round(prFlow.avgTimeToFirstReviewHours)}h` : "—"}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">Time to first review</p>
                       </Card>
-                    )}
-                    {prFlow?.topReviewers && prFlow.topReviewers.length > 0 && (
-                      <Card title="Top Reviewers" subtitle="Most active reviewers in the last 30 days" className="rounded-2xl border border-slate-800 bg-slate-900">
-                        <div className="mt-4 space-y-2">
-                          {prFlow.topReviewers.map((reviewer, index) => (
-                            <div key={reviewer.reviewer_login} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <span className="text-sm font-bold text-slate-500">#{index + 1}</span>
-                                <span className="text-sm font-medium text-white">{reviewer.reviewer_login}</span>
-                              </div>
-                              <span className="text-sm font-semibold text-emerald-400">{reviewer.review_count} reviews</span>
-                            </div>
-                          ))}
-                        </div>
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Approval Rate</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {prFlow?.approvalRate !== null && prFlow?.approvalRate !== undefined ? `${prFlow.approvalRate}%` : "—"}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">PRs merged with approval</p>
                       </Card>
-                    )}
+                      <Card className="rounded-xl border border-slate-800 bg-slate-900">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Changes Requested</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {prFlow?.changesRequestedRate !== null && prFlow?.changesRequestedRate !== undefined ? `${prFlow.changesRequestedRate}%` : "—"}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">PRs with changes requested</p>
+                      </Card>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section: Rankings - only in PR Flow */}
+                {section === "productivity" && (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Rankings</p>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {prFlow?.topContributors && prFlow.topContributors.length > 0 && (
+                        <Card title="Top Contributors by Merged PRs" subtitle="Last 30 days" className="rounded-2xl border border-slate-800 bg-slate-900">
+                          <div className="mt-4 space-y-2">
+                            {prFlow.topContributors.map((contributor, index) => (
+                              <div key={contributor.author_login} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-sm font-bold text-slate-500">#{index + 1}</span>
+                                  <span className="text-sm font-medium text-white">{contributor.author_login}</span>
+                                </div>
+                                <span className="text-sm font-semibold text-cyan-400">{contributor.merged_count} merged</span>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      )}
+                      {prFlow?.topReviewers && prFlow.topReviewers.length > 0 && (
+                        <Card title="Top Reviewers" subtitle="Most active reviewers in the last 30 days" className="rounded-2xl border border-slate-800 bg-slate-900">
+                          <div className="mt-4 space-y-2">
+                            {prFlow.topReviewers.map((reviewer, index) => (
+                              <div key={reviewer.reviewer_login} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-sm font-bold text-slate-500">#{index + 1}</span>
+                                  <span className="text-sm font-medium text-white">{reviewer.reviewer_login}</span>
+                                </div>
+                                <span className="text-sm font-semibold text-emerald-400">{reviewer.review_count} reviews</span>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      )}
+                    </div>
                   </div>
                 )}
 
