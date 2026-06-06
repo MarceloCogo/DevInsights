@@ -24,7 +24,11 @@ const {
 } = config;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const webDistPath = join(__dirname, "../../web/dist");
+const webDistCandidates = [
+  join(__dirname, "../../web/dist"),
+  join(__dirname, "../web/dist"),
+];
+const webDistPath = webDistCandidates.find((p) => existsSync(p)) ?? webDistCandidates[0];
 const migrationsPathCandidates = [
   join(__dirname, "./storage/migrations"),
   join(__dirname, "../src/storage/migrations"),
