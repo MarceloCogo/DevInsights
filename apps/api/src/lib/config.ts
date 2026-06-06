@@ -15,8 +15,7 @@ export const config = {
   sessionCookieName: process.env.SESSION_COOKIE_NAME ?? "devinsights.sid",
   sessionSecret: process.env.SESSION_SECRET ?? "dev-secret",
   sessionTtlSeconds: 60 * 60 * 24 * 7,
-  sessionCookieSameSite: (process.env.SESSION_COOKIE_SAME_SITE as "lax" | "strict" | "none" | undefined) ??
-    (isProduction ? "none" : "lax"),
+  sessionCookieSameSite: "lax",
 
   // GitHub OAuth
   githubClientId: process.env.GITHUB_CLIENT_ID ?? "",
