@@ -387,6 +387,96 @@ const runInitialSync = async (organizationId: number, jobId: number) => {
               ]
             );
 
+            // Get the pull_request row id for review tables
+            const prIdResult = await pool.query(
+              `SELECT id FROM pull_requests WHERE organization_id = $1 AND repository_id = $2 AND github_pr_id = $3`,
+              [organizationId, repository.repository_id, pr.id]
+            );
+            const pullRequestId = prIdResult.rows[0]?.id as number | undefined;
+
+            if (pullRequestId) {
+              // Collect PR reviews
+              try {
+                const reviewsResponse = await octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                  per_page: 100
+                });
+                for (const review of reviewsResponse.data as Array<{ id: number; user?: { login?: string }; state?: string; submitted_at?: string; commit_id?: string; html_url?: string }>) {
+                  await pool.query(
+                    `INSERT INTO pull_request_reviews (organization_id, pull_request_id, github_review_id, reviewer_login, state, submitted_at, commit_id, html_url)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     ON CONFLICT (organization_id, github_review_id) DO UPDATE SET
+                       reviewer_login = excluded.reviewer_login,
+                       state = excluded.state,
+                       submitted_at = excluded.submitted_at,
+                       commit_id = excluded.commit_id,
+                       html_url = excluded.html_url,
+                       updated_at = now()`,
+                    [organizationId, pullRequestId, review.id, review.user?.login ?? null, review.state ?? null, review.submitted_at ?? null, review.commit_id ?? null, review.html_url ?? null]
+                  );
+                }
+              } catch (reviewErr) {
+                console.error("PR reviews collection failed", { repo: repository.full_name, prNumber: pr.number, error: String(reviewErr) });
+              }
+
+              // Collect PR review comments
+              try {
+                const commentsResponse = await octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", {
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                  per_page: 100
+                });
+                for (const comment of commentsResponse.data as Array<{ id: number; user?: { login?: string }; path?: string; line?: number | null; side?: string; created_at?: string; updated_at?: string; html_url?: string }>) {
+                  await pool.query(
+                    `INSERT INTO pull_request_review_comments (organization_id, pull_request_id, github_comment_id, reviewer_login, path, line, side, created_at, updated_at, html_url)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                     ON CONFLICT (organization_id, github_comment_id) DO UPDATE SET
+                       reviewer_login = excluded.reviewer_login,
+                       path = excluded.path,
+                       line = excluded.line,
+                       side = excluded.side,
+                       updated_at = excluded.updated_at,
+                       html_url = excluded.html_url`,
+                    [organizationId, pullRequestId, comment.id, comment.user?.login ?? null, comment.path ?? null, comment.line ?? null, comment.side ?? null, comment.created_at ?? null, comment.updated_at ?? null, comment.html_url ?? null]
+                  );
+                }
+              } catch (commentErr) {
+                console.error("PR review comments collection failed", { repo: repository.full_name, prNumber: pr.number, error: String(commentErr) });
+              }
+
+              // Collect requested reviewers from PR detail
+              try {
+                const requestedReviewers = (detail.data as any).requested_reviewers ?? [];
+                const requestedTeams = (detail.data as any).requested_teams ?? [];
+                for (const reviewer of requestedReviewers as Array<{ login?: string }>) {
+                  if (reviewer.login) {
+                    await pool.query(
+                      `INSERT INTO pull_request_requested_reviewers (organization_id, pull_request_id, reviewer_login, reviewer_type)
+                       VALUES ($1, $2, $3, 'user')
+                       ON CONFLICT (pull_request_id, reviewer_login, reviewer_type) DO UPDATE SET updated_at = now()`,
+                      [organizationId, pullRequestId, reviewer.login]
+                    );
+                  }
+                }
+                for (const team of requestedTeams as Array<{ slug?: string; name?: string }>) {
+                  const teamLogin = team.slug ?? team.name ?? null;
+                  if (teamLogin) {
+                    await pool.query(
+                      `INSERT INTO pull_request_requested_reviewers (organization_id, pull_request_id, reviewer_login, reviewer_type)
+                       VALUES ($1, $2, $3, 'team')
+                       ON CONFLICT (pull_request_id, reviewer_login, reviewer_type) DO UPDATE SET updated_at = now()`,
+                      [organizationId, pullRequestId, teamLogin]
+                    );
+                  }
+                }
+              } catch (reqRevErr) {
+                console.error("PR requested reviewers collection failed", { repo: repository.full_name, prNumber: pr.number, error: String(reqRevErr) });
+              }
+            }
+
             // Small delay to respect rate limits
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
