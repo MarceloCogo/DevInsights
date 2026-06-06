@@ -18,18 +18,14 @@ export const registerStaticRoutes = (
   if (hasWebDist) {
     app.register(FastifyStatic, {
       root: webDistPath,
-      prefix: "/",
-      wildcard: false
+      prefix: "/"
     });
 
-    app.get("/", async (_, reply) => reply.sendFile("index.html"));
-    app.get("/app", async (_, reply) => reply.sendFile("index.html"));
-    app.get("/app/*", async (_, reply) => reply.sendFile("index.html"));
-    app.get("/*", async (request, reply) => {
+    // SPA fallback: any non-API route that didn't match a static file serves index.html
+    app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith(apiBasePath)) {
         return reply.code(404).send({ error: "not_found" });
       }
-
       return reply.sendFile("index.html");
     });
     return;

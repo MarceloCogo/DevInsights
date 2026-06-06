@@ -13,17 +13,21 @@ COPY . .
 RUN pnpm --filter @devinsights/web build
 RUN pnpm --filter @devinsights/api build
 
-FROM node:22-alpine AS runtime
+FROM base AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN corepack enable
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+
+# Workspace manifest files (needed for pnpm filter to resolve the api package)
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+
+# Install ONLY production deps for the api package (clean, no fragile symlinks)
+RUN pnpm install --prod --filter @devinsights/api... --no-frozen-lockfile
+
+# Built artifacts
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/src/storage/migrations ./apps/api/dist/storage/migrations
 COPY --from=build /app/apps/web/dist ./apps/web/dist
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+
 EXPOSE 3001
-CMD ["node", "apps/api/dist/server.js"]
+CMD ["pnpm", "--filter", "@devinsights/api", "start"]
