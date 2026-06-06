@@ -51,9 +51,11 @@ export const registerAuthRoutes = (app: FastifyInstance, deps: RouteDeps) => {
     }
 
     try {
+      app.log.info("[auth:callback] callback invoked");
       const db = getPool();
       const accessToken = await exchangeOAuthCode(code);
       const githubUser = await fetchGitHubUser(accessToken);
+      app.log.info({ githubLogin: githubUser.login, githubId: githubUser.id }, "[auth:callback] github user obtained");
       const upsertResult = await db.query(
         `insert into users (github_id, github_login, name, avatar_url) values ($1, $2, $3, $4)
          on conflict (github_id) do update set github_login = excluded.github_login, name = excluded.name, avatar_url = excluded.avatar_url, updated_at = now()
@@ -77,13 +79,17 @@ export const registerAuthRoutes = (app: FastifyInstance, deps: RouteDeps) => {
 
       const sessionId = randomBytes(24).toString("hex");
       await db.query(`insert into sessions (id, user_id, active_organization_id, expires_at) values ($1, $2, $3, now() + interval '7 days')`, [sessionId, user.id, activeOrganizationId]);
-      reply.setCookie(sessionCookieName, sessionId, {
+      app.log.info({ sessionIdPrefix: sessionId.slice(0, 6), userId: user.id, organizationId: activeOrganizationId }, "[auth:callback] session created in db");
+
+      const cookieOpts = {
         path: "/",
         httpOnly: true,
         sameSite: sessionCookieSameSite,
         secure: isProduction,
         maxAge: sessionTtlSeconds
-      });
+      };
+      reply.setCookie(sessionCookieName, sessionId, cookieOpts);
+      app.log.info({ cookieName: sessionCookieName, sameSite: cookieOpts.sameSite, secure: cookieOpts.secure, path: cookieOpts.path, maxAge: cookieOpts.maxAge }, "[auth:callback] setCookie called");
 
       const pendingInstallationIdRaw = request.cookies["devinsights.pending_installation_id"];
       const pendingInstallationId = Number(pendingInstallationIdRaw);
@@ -110,7 +116,9 @@ export const registerAuthRoutes = (app: FastifyInstance, deps: RouteDeps) => {
         });
       }
 
-      return reply.redirect(`${getWebBaseUrl(request)}/app`);
+      const redirectUrl = `${getWebBaseUrl(request)}/app`;
+      app.log.info({ redirectUrl }, "[auth:callback] redirecting after login");
+      return reply.redirect(redirectUrl);
     } catch (error) {
       app.log.error(error);
       return reply.code(500).send({ error: "oauth_callback_failed" });
