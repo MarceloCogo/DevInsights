@@ -12,10 +12,14 @@ export const registerStaticRoutes = (
 ) => {
   const { webDistPath, apiBasePath, getWebBaseUrl } = options;
 
-  if (existsSync(webDistPath)) {
+  const hasWebDist = existsSync(webDistPath);
+  app.log.info({ webDistPath, hasWebDist }, "[static-routes] web dist check");
+
+  if (hasWebDist) {
     app.register(FastifyStatic, {
       root: webDistPath,
-      prefix: "/"
+      prefix: "/",
+      wildcard: false
     });
 
     app.get("/", async (_, reply) => reply.sendFile("index.html"));
@@ -31,19 +35,31 @@ export const registerStaticRoutes = (
     return;
   }
 
+  // Fallback: no static files available, redirect to WEB_BASE_URL
+  app.log.warn({ webDistPath }, "[static-routes] web dist NOT found, using redirects");
+
   app.get("/", async (request, reply) => {
     const target = `${getWebBaseUrl(request)}/`;
+    if (target.replace(/\/$/, "") === `${request.protocol}://${request.hostname}`) {
+      return reply.code(503).send({ error: "web_dist_not_found", message: "Frontend assets not available" });
+    }
     return reply.redirect(target);
   });
 
   app.get("/app", async (request, reply) => {
     const target = `${getWebBaseUrl(request)}/app`;
+    if (new URL(target).hostname === request.hostname) {
+      return reply.code(503).send({ error: "web_dist_not_found", message: "Frontend assets not available" });
+    }
     return reply.redirect(target);
   });
 
   app.get("/app/*", async (request, reply) => {
     const suffix = request.url.replace(/^\/app/, "");
     const target = `${getWebBaseUrl(request)}/app${suffix}`;
+    if (new URL(target).hostname === request.hostname) {
+      return reply.code(503).send({ error: "web_dist_not_found", message: "Frontend assets not available" });
+    }
     return reply.redirect(target);
   });
 };
